@@ -215,9 +215,15 @@
     }
     document.addEventListener('pause', syncPausedDownload, true);
     document.addEventListener('play', stopPausedDownload, true);
-    window.addEventListener('hashchange', function() { if (!location.hash.startsWith('#/player/')) stopPausedDownload(); });
+    // Leaving the player frees its memory buffers and stops its torrents right away.
+    window.addEventListener('hashchange', function(event) {
+        if (location.hash.startsWith('#/player/')) return;
+        stopPausedDownload();
+        if (/#\/player\//.test(event.oldURL || '')) navigator.sendBeacon('/ak/leave', '');
+    });
     window.addEventListener('pagehide', function() {
         navigator.sendBeacon('/ak/paused-download', JSON.stringify({ stop: true }));
+        navigator.sendBeacon('/ak/leave', '');
     });
     setInterval(syncPausedDownload, 5000);
     // Route the WASM core, tracks, subtitles and telemetry through one selected backend.

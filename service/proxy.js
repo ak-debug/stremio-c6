@@ -76,17 +76,20 @@ function createApp(options) {
         agent: function(protocol) { return agents[protocol]; },
         timeout: options.prepareTimeout
     });
+    // The TV server keeps torrent data in a 45 MiB memory ring with no disk cache, so request a
+    // narrower window from it and never ask it to download further ahead than the TV holds.
     function readAheadOptions() {
-        return Object.assign({ agent: function(protocol) { return agents[protocol]; }, keep: function(hash) { return pausedDownload.holds(hash); } }, options.readAheadOptions);
+        var tv = config.mode !== 'external' ? { maxAhead: 160 * 1048576, parallel: 2, segment: 8 * 1048576, serverAhead: false } : {};
+        return Object.assign({ agent: function(protocol) { return agents[protocol]; }, keep: function(hash) { return pausedDownload.holds(hash); } }, tv, options.readAheadOptions);
     }
     var readAhead = createReadAhead(readAheadOptions());
     var cleanup = engineCleanup.createEngineCleanup(Object.assign({
-        backend: function() { return config.mode === 'external' ? (options.target || config.serverUrl) : null; },
+        backend: function() { return config.mode === 'external' ? (options.target || config.serverUrl) : child ? (options.target || LOCAL_URL) : null; },
         agent: function(protocol) { return agents[protocol]; },
         keep: function(hash) { return pausedDownload.holds(hash); },
         canRefresh: function(hash) { return readAhead.aheadFor(hash) >= 48 * 1048576; }
     }, options.cleanupOptions));
-    function useReadAhead() { return options.readAhead !== undefined ? options.readAhead : config.mode === 'external'; }
+    function useReadAhead() { return options.readAhead !== undefined ? options.readAhead : true; }
     function stopLocal() {
         if (child) child.kill();
         child = null;
@@ -113,7 +116,8 @@ function createApp(options) {
                 try {
                     var settings = await requestJson(LOCAL_URL, '/settings');
                     if (!settings.values || !settings.values.serverVersion) throw new Error('Unexpected TV server.');
-                    var profile = Object.assign({ btHandshakeTimeout: 20000, btRequestTimeout: 4000, cacheSize: 0 }, PROFILES[config.profile]);
+                    // Peers that never finish a handshake hold a connection slot; free it after 6 s, not 20 s.
+                    var profile = Object.assign({ btHandshakeTimeout: 6000, btRequestTimeout: 4000, cacheSize: 0 }, PROFILES[config.profile]);
                     var result = await requestJson(LOCAL_URL, '/settings', 'POST', profile);
                     if (!result.success) throw new Error('Could not apply TV torrent profile.');
                     return;
@@ -197,6 +201,15 @@ function createApp(options) {
                 if (req.method === 'DELETE') { discovery.cancel(); return json(res, 200, discovery.state()); }
                 return json(res, 405, { error: 'Use POST, GET or DELETE for server discovery.' });
             }
+            // The player was closed: free its memory buffers, then stop the torrents it used
+            // once their requests have closed, instead of after the usual two minutes.
+            if (pathname === '/ak/leave') {
+                if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
+                req.resume();
+                readAhead.release();
+                setTimeout(function() { cleanup.flush(); }, options.leaveDelay || 1500).unref();
+                return json(res, 202, { leaving: true });
+            }
             if (pathname === '/ak/config' && req.method === 'GET') return json(res, 200, { configured: configured, config: config });
             if (pathname === '/ak/status' && req.method === 'GET') {
                 return json(res, 200, { mode: config.mode, profile: config.profile, backend: target(), localRunning: !!child, error: engineError, memory: process.memoryUsage().rss, readAhead: readAhead.state(), cleanup: cleanup.state() });
@@ -210,7 +223,7 @@ function createApp(options) {
                         if (activeRequests || starting) throw new Error('Stop playback and wait for the server to finish starting before changing setup.');
                         fs.writeFileSync(configFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
                         fs.renameSync(configFile + '.tmp', configFile);
-                        pausedDownload.stop(); readAhead.shutdown(); readAhead = createReadAhead(readAheadOptions()); stopLocal(); config = next; configured = true;
+                        pausedDownload.stop(); readAhead.shutdown(); stopLocal(); config = next; configured = true; readAhead = createReadAhead(readAheadOptions());
                         json(res, 200, { success: true, config: config });
                     } catch (error) { json(res, 400, { error: error.message }); }
                 });

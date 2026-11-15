@@ -94,6 +94,16 @@ function createEngineCleanup(options) {
     }
     var checker = setInterval(check, interval); checker.unref();
 
+    // Stop now every torrent whose TV requests have all closed (the player was left).
+    function flush() {
+        Array.from(timers.keys()).forEach(function(hash) {
+            clearTimeout(timers.get(hash)); timers.delete(hash);
+            if (active.has(hash)) return;
+            if (options.keep && options.keep(hash)) return schedule(hash);
+            remove(hash, 'stopped on leaving the player');
+        });
+    }
+
     function state() {
         return { active: Array.from(active.keys()), pending: Array.from(timers.keys()), log: log.slice(-5) };
     }
@@ -102,7 +112,7 @@ function createEngineCleanup(options) {
         timers.forEach(function(timer) { clearTimeout(timer); });
         timers.clear(); active.clear();
     }
-    return { hold: hold, state: state, check: check, shutdown: shutdown };
+    return { hold: hold, state: state, check: check, flush: flush, shutdown: shutdown };
 }
 
 module.exports = { createEngineCleanup: createEngineCleanup, mediaHash: mediaHash };

@@ -275,7 +275,9 @@ function createReadAhead(options) {
         return lead === Infinity ? 0 : lead;
     }
     function shutdown() { clearInterval(timer); readers.slice().forEach(function(r) { dispose(r, true); }); }
-    return { handle: handle, state: state, aheadFor: aheadFor, shutdown: shutdown };
+    // Free every buffer now; in-flight segments still finish so the server does not leak them.
+    function release() { readers.slice().forEach(function(r) { dispose(r); }); }
+    return { handle: handle, state: state, aheadFor: aheadFor, release: release, shutdown: shutdown };
 }
 
 module.exports = { createReadAhead: createReadAhead, parseRange: parseRange };

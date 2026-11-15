@@ -46,3 +46,15 @@ On device: the 30.7 GB Odyssey source played 44.4 s in 45 s with the TV read-ahe
 - Stats marks the TV read-ahead as "full" when it has reached its memory limit.
 
 29 automated tests, including pre-download recovering from failed pieces.
+
+## 1.3.0 — Better TV mode, and free everything on leaving the player
+
+Measured in TV mode on The Odyssey (30.7 GB): the TV downloaded 0.1–1.4 MiB/s, with 21 peers connected and 3 sending, against about 2.8 MiB/s needed. It had 406–434 MB of memory available, 207 MB of swap free and its processor 20–30% busy. Memory was not the limit; the download was.
+
+- **TV peer settings:** both TV profiles use a 6 s handshake timeout instead of 20 s, as on the Mac, so slots held by dead peers free up sooner.
+- **Read-ahead in TV mode, in memory only:** up to 160 MiB, always leaving at least 200 MiB of TV memory free. It requests 2 closed 8 MiB segments at a time to suit the TV server's 45 MiB memory ring, and never asks the TV server to pre-download. Nothing is written to disk. "Download fell behind" recovery now works in TV mode too.
+- **Leaving the player clears everything:** the app tells the service (`POST /ak/leave`), which frees all read-ahead buffers at once and, about 1.5 s later, stops every torrent whose requests have closed, in both TV and Mac mode. In TV mode the 2-minute cleanup also applies to the TV's own server. Torrents kept for paused downloading are skipped.
+
+The TV's built-in storage is deliberately not used for torrent data: streaming writes the whole file, 20–40 GB per 4K movie, to flash that can't be replaced, with 2.4 GB free.
+
+31 automated tests, including TV-mode segments and leaving the player.

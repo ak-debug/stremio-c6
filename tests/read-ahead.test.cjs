@@ -281,3 +281,51 @@ test('pre-download retries pieces the server failed, after backing off', async (
         await reader.cancel();
     } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });
+
+test('in TV mode, reads ahead from the TV server in 8 MiB segments without asking it to pre-download', async () => {
+    const file = crypto.randomBytes(20 * MiB);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-ra-'));
+    const log = [];
+    const backend = backendFor(file, log);
+    const target = await listen(backend);
+    // No saved setup: TV mode, with the read-ahead on by default.
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, ensureLocal: async () => {} });
+    const base = await listen(proxy);
+    try {
+        const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
+        assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file));
+        assert.ok(log.length >= 3, log.join(' '));
+        for (const range of log) { assert.ok(range, 'only media segments, no stats lookups'); const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 8 * MiB, range); }
+        assert.equal((await status(base)).serverProbes, 0);
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
+});
+
+test('leaving the player frees its buffers and stops its torrent at once', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-leave-'));
+    const file = crypto.randomBytes(16 * MiB), removed = [];
+    const media = backendFor(file, []);
+    const backend = http.createServer((req, res) => {
+        if (/\/remove$/.test(req.url)) { removed.push(req.url); return res.end('{}'); }
+        media.emit('request', req, res);
+    });
+    const target = await listen(backend);
+    fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({ mode: 'external', serverUrl: 'http://192.168.0.9:11470' }));
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, readAhead: true, leaveDelay: 30,
+        readAheadOptions: { maxAhead: 4 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, parallel: 1, serverAhead: false, memory: () => null } });
+    const base = await listen(proxy);
+    try {
+        const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
+        const reader = reply.body.getReader();
+        await reader.read();
+        assert.equal((await status(base)).readers.length, 1);
+        const left = await fetch(base + '/ak/leave', { method: 'POST', headers: { Origin: base } });
+        assert.equal(left.status, 202);
+        assert.equal((await status(base)).readers.length, 0, 'buffers freed');
+        await reader.read().catch(() => {});
+        for (let n = 0; n < 50 && !removed.length; n++) await new Promise(r => setTimeout(r, 20));
+        assert.deepEqual(removed, [`/${HASH}/remove`]);
+        const log = (await (await fetch(base + '/ak/status')).json()).cleanup.log;
+        assert.equal(log[log.length - 1].action, 'stopped on leaving the player');
+        assert.equal((await fetch(base + '/ak/leave', { method: 'POST', headers: { Origin: 'http://other.example' } })).status, 403);
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
+});
