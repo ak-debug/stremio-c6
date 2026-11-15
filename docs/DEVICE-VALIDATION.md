@@ -60,3 +60,15 @@ This validates this TV/server/source combination over a short pause/screensaver 
 Before installation, live playback inspection reported 3840×2160 native/direct HEVC playback with no media error. The owner checked the LG Picture menu and confirmed HDR mode. This verifies 4K decode plus user-observed HDR activation for that particular stream. It does not verify Dolby Vision, a particular bit depth, source authenticity/mastering, AV sync, long-session memory behavior or frame-drop rate; the platform's frame counters returned unusable zero totals. The detailed pipeline query was denied by the TV.
 
 An attempted maintenance restore of a saved pre-update route did not successfully restore the working stream and showed a player error. The owner selected a working source manually. That source was then preserved during all Stats tests and the maintenance checkpoint removed. Its torrent hash/file index matched the TV's local saved stream-history entry. No claim of successful automatic exact-source reopening is made.
+
+## 1.1.4 — track lookup and polling fixes; Mac Fast profile
+
+Installed 1.1.4 over SSH with the developer key, because Homebrew Node on the development Mac was blocked from the LAN (EHOSTUNREACH for every local address while `curl`/`nc` worked). That breaks the `ares-*` tools until macOS Local Network access is allowed for Node. Launch required `luna-send-pub -i`; `-n 1` printed nothing.
+
+Continue Watching → The Odyssey resumed the 25,777,506,350-byte source at 1094.9 s in native 3840×2160, readyState 4, no media error, about 2 seconds after selection. Four native audio tracks produced one `/tracks/` request. The Mac engine used the new 200-connection profile, but only 10–17 peers connected (67 known), giving about 0.7–3.4 MiB/s; this swarm is now the limit. The pause lease activated after the owner paused and the Mac kept downloading. See [1.1.4 notes](RELEASE-NOTES-1.1.4.md).
+
+## 1.1.5 / 1.1.6 — "Video is not supported" on MP4 torrents; wired TV
+
+Reproduced the LG media player hand-off with Resident Evil (2026) 4K iTunes MP4 releases. The native player raised error 4, Stremio code 83, while a cold torrent was still fetching an index stored at the end of the file. The same file type played in-app once warm. 1.1.5 prepared the 19.4 MiB end-of-file index in about 36 s, but the player still timed out after 40 s per attempt without the opening video data. It played in-app at 3832×1600 on the fourth attempt, with no hand-off. 1.1.5's retry counter never stopped; 1.1.6 fixes that and also prefetches the opening 16 MiB. 1.1.6 is installed. Its full cold-start playback test is still pending.
+
+Cached-data delivery from the Mac server rose from 3.2–4.5 MB/s with the TV on Wi-Fi to 7.7–9.1 MB/s with the TV wired (now 192.168.0.102). The TV proxy added no measurable overhead. A Wi-Fi computer measured 1.8–6.9 MB/s from the same server, so the server's Wi-Fi link is the likely next limit for high-bitrate remuxes.

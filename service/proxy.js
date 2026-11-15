@@ -6,6 +6,7 @@ var path = require('path');
 var spawn = require('child_process').spawn;
 var createDiscovery = require('./discovery').createDiscovery;
 var createPausedDownload = require('./paused-download').createPausedDownload;
+var createPrepare = require('./prepare').createPrepare;
 var LOCAL_URL = 'http://127.0.0.1:11479';
 var PROFILES = {
     balanced: { btMaxConnections: 100, btDownloadSpeedSoftLimit: 4194304, btDownloadSpeedHardLimit: 15728640, btMinPeersForStable: 5 },
@@ -67,6 +68,11 @@ function createApp(options) {
     var pausedDownload = createPausedDownload({
         backend: function() { return config.mode === 'external' ? (options.target || config.serverUrl) : null; },
         settings: function(base) { return requestJson(base, '/settings'); }
+    });
+    var prepare = createPrepare({
+        backend: function() { return options.target || target(); },
+        agent: function(protocol) { return agents[protocol]; },
+        timeout: options.prepareTimeout
     });
     function stopLocal() {
         if (child) child.kill();
@@ -153,6 +159,24 @@ function createApp(options) {
                 });
                 return;
             }
+            if (pathname === '/ak/prepare') {
+                if (req.method === 'GET') return json(res, 200, prepare.state());
+                if (req.method !== 'POST') return json(res, 405, { error: 'Use GET or POST.' });
+                var prepChunks = [], prepBytes = 0;
+                req.on('data', function(chunk) { prepBytes += chunk.length; if (prepBytes > 16384) req.destroy(); else prepChunks.push(chunk); });
+                req.on('end', async function() {
+                    var control = new AbortController();
+                    activeRequests++;
+                    res.once('close', function() { activeRequests--; lastActivity = Date.now(); if (!res.writableEnded) control.abort(); });
+                    try {
+                        var input = JSON.parse(Buffer.concat(prepChunks).toString());
+                        await ensureBackend();
+                        var result = await prepare.prepare(input, control.signal);
+                        if (!res.destroyed) json(res, 200, result);
+                    } catch (error) { if (!res.destroyed) json(res, 502, { error: error.message }); }
+                });
+                return;
+            }
             if (pathname === '/ak/discovery') {
                 if (req.method === 'POST') return json(res, 202, discovery.start());
                 if (req.method === 'GET') return json(res, 200, discovery.state());
@@ -215,9 +239,9 @@ function createApp(options) {
     idleTimer.unref();
     // webOS can quit the service during upgrades without closing its HTTP server first.
     process.once('exit', stopLocal);
-    server.shutdown = function() { discovery.cancel(); pausedDownload.shutdown(); stopLocal(); server.close(); };
+    server.shutdown = function() { discovery.cancel(); pausedDownload.shutdown(); prepare.shutdown(); stopLocal(); server.close(); };
     server.on('close', function() {
-        discovery.cancel(); pausedDownload.shutdown(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
+        discovery.cancel(); pausedDownload.shutdown(); prepare.shutdown(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
         Object.values(agents).forEach(function(agent) { agent.destroy(); });
     });
     return server;

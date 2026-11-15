@@ -1,0 +1,60 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -21100,6 +21100,22 @@
+                 A.style.width = "100%", A.style.height = "100%", A.style.backgroundColor = "black", A.controls = !1, A.onerror = function() {
+                     ! function() {
+                         if (w) return;
++                        var __akCode = (A.error || {}).code;
++                        // Cold torrents can fail before data arrives: warm the file and retry in-app first.
++                        // Stream objects are frozen, so count attempts on the video element.
++                        if ((3 === __akCode || 4 === __akCode) && D && window.__akShouldRetry && (A.__akRetries = A.__akRetryStream === D ? A.__akRetries + 1 : 1, A.__akRetryStream = D, window.__akShouldRetry(D.url, A.__akRetries))) {
++                            var __akStream = D;
++                            A.currentTime > 0 && (C = Math.round(1e3 * A.currentTime));
++                            console.warn("Media error " + __akCode + ", retrying torrent in-app (attempt " + A.__akRetries + ")");
++                            (window.__akPrepare ? window.__akPrepare(__akStream.url) : Promise.resolve()).then(function() {
++                                if (w || D !== __akStream) return;
++                                try { A.removeAttribute("src"), A.load() } catch (__e) {}
++                                A.src = __akStream.url;
++                                try { A.load() } catch (__e) {}
++                                try { A.play() } catch (__e) {}
++                            });
++                            return
++                        }
+                         var e;
+                         switch ((A.error || {}).code) {
+                             case 1:
+@@ -21534,18 +21550,22 @@
+                         case "load":
+                             if (r && r.stream && "string" == typeof r.stream.url) {
+                                 D = r.stream, C = r.time, G("stream"), A.autoplay = "boolean" != typeof r.autoplay || r.autoplay, G("loaded"), G("paused"), G("time"), G("duration"), G("buffering"), G("buffered"), G("subtitlesTracks"), G("selectedSubtitlesTrackId"), G("audioTracks"), G("selectedAudioTrackId");
+-                                var n = 0;
+-                                A.src = D.url, i = function() {
+-                                    try {
+-                                        A.load()
+-                                    } catch (e) {}
+-                                    try {
+-                                        A.play()
+-                                    } catch (e) {}
+-                                }, a = setInterval((function() {
+-                                    if (A.mediaId) return clearInterval(a), F(), g(), void i();
+-                                    ++n > 4 && (clearInterval(a), F(), g(), i())
+-                                }), 300)
++                                var n = 0, __akStream = D;
++                                // Warm torrent files (including an MP4 index at the end) before the native player starts.
++                                (window.__akPrepare ? window.__akPrepare(D.url) : Promise.resolve()).then(function() {
++                                    if (w || D !== __akStream) return;
++                                    A.src = D.url, i = function() {
++                                        try {
++                                            A.load()
++                                        } catch (e) {}
++                                        try {
++                                            A.play()
++                                        } catch (e) {}
++                                    }, a = setInterval((function() {
++                                        if (A.mediaId) return clearInterval(a), F(), g(), void i();
++                                        ++n > 4 && (clearInterval(a), F(), g(), i())
++                                    }), 300)
++                                })
+                             } else B(Object.assign({}, s.UNSUPPORTED_STREAM, {
+                                 critical: !0,
+                                 stream: r ? r.stream : null

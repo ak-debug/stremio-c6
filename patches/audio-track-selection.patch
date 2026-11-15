@@ -1,6 +1,36 @@
 --- video.chunk.js
 +++ video.chunk.js
-@@ -18772,6 +18770,35 @@
+@@ -17033,7 +17033,29 @@
+             }
+         },
+         4775: e => {
++            // Each lookup makes the server read the media header. Share one lookup per stream URL
++            // and give every caller its own arrays, because callers splice them.
++            var __akUrl = null, __akWaiters = null, __akResult;
++            function __akDeliver(t, r) {
++                try { t(r ? { audio: r.audio.slice(), subs: r.subs.slice() } : !1) } catch (__e) { console.error("[tracks] callback failed:", __e) }
++            }
+             e.exports = function(e, t) {
++                if (__akUrl === e) {
++                    if (__akWaiters) __akWaiters.push(t);
++                    else setTimeout(function() { __akDeliver(t, __akResult) }, 0);
++                    return
++                }
++                var __url = e;
++                __akUrl = e, __akWaiters = [t], __akResult = void 0;
++                __akFetch(e, function(r) {
++                    if (__akUrl !== __url) return;
++                    var w = __akWaiters;
++                    __akWaiters = null, __akResult = r;
++                    if (!r) __akUrl = null;
++                    w.forEach(function(t) { __akDeliver(t, r) })
++                })
++            };
++            function __akFetch(e, t) {
+                 var _ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+                 var _timer = setTimeout(function() { _ctrl && _ctrl.abort(); }, 10000);
+                 fetch((window.__STREMIO_SERVER_URL__||"http://127.0.0.1:11470")+"/tracks/" + encodeURIComponent(e), _ctrl ? {signal: _ctrl.signal} : {}).then((function(e) {
+@@ -18772,6 +18794,35 @@
                  }, d.canplaythrough = function() {
                      S("buffering"), S("buffered")
                  }, d.onloadedmetadata = function() {
@@ -36,7 +66,7 @@
                      S("loaded")
                  }, d.onloadeddata = function() {
                      S("buffering"), S("buffered")
-@@ -18858,7 +18885,7 @@
+@@ -18858,7 +18909,7 @@
                          case "subtitlesOpacity":
                              return g ? null : Math.round(100 * v);
                          case "audioTracks":
@@ -45,7 +75,7 @@
                                  return Object.freeze({
                                      id: "EMBEDDED_" + String(e.id),
                                      lang: "string" == typeof e.lang && e.lang.length > 0 ? e.lang : "string" == typeof e.name && e.name.length > 0 ? e.name : String(e.id),
-@@ -18866,9 +18893,32 @@
+@@ -18866,9 +18917,32 @@
                                      origin: "EMBEDDED",
                                      embedded: !0
                                  })
@@ -80,7 +110,7 @@
                          case "volume":
                              return g || null === d.volume || !isFinite(d.volume) ? null : Math.floor(100 * d.volume);
                          case "muted":
-@@ -19003,6 +19053,44 @@
+@@ -19003,6 +19077,44 @@
                                                  return e.id === t
                                              }));
                                              h.audioTrack = a ? parseInt(a.id.split("_").pop(), 10) : -1, a && (S("selectedAudioTrackId"), f.emit("audioTrackLoaded", a))
@@ -125,13 +155,15 @@
                                          }
                                          break;
                                      case "volume":
-@@ -21049,7 +21049,68 @@
+@@ -21050,7 +21162,70 @@
                      G("buffering"), G("buffered")
                  }, A.onloadeddata = function() {
                      G("buffering"), G("buffered")
 -                }, A.onloadedmetadata = function() {
 +                }, A.audioTracks && A.audioTracks.addEventListener && A.audioTracks.addEventListener("addtrack", function() {
-+                setTimeout(function() {
++                // webOS fires addtrack once per track: rebuild the list once after the last one.
++                clearTimeout(A.__akTrackTimer);
++                A.__akTrackTimer = setTimeout(function() {
 +                    if (A.audioTracks && A.audioTracks.length > 0) {
 +                        T = [];
 +                        Array.from(A.audioTracks).forEach(function(e, t) {

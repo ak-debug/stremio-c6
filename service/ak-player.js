@@ -29,10 +29,12 @@
             ticks++;
             if (el.isConnected) attached = true;
             else if (attached || ticks > 10) return stop();
+            // The live Stats panel already polls; the hidden loading copy need not duplicate it.
+            if (!el.dataset.info && document.body.classList.contains('ak-info-open')) { timer = setTimeout(tick, 1000); return; }
             var item = getSelected(), stream = item && item.stream;
             var base = getServerUrl() || location.origin;
             var seconds = bufferSeconds();
-            var prefix = (el.dataset.info ? 'Live stats · Stats again or Back to close\n' : '') + (seconds === null ? '' : 'Playable buffer ' + seconds.toFixed(1) + ' s\n');
+            var prefix = (el.dataset.info ? 'Live stats · Stats again or Back to close\n' : '') + (window.__AK_PREPARE_STATUS__ ? window.__AK_PREPARE_STATUS__ + '\n' : '') + (seconds === null ? '' : 'Playable buffer ' + seconds.toFixed(1) + ' s\n');
             if (!stream || !stream.infoHash) {
                 el.textContent = prefix + 'Direct stream';
                 timer = setTimeout(tick, 1000); return;
@@ -100,6 +102,42 @@
     window.addEventListener('hashchange', function() {
         if (!location.hash.startsWith('#/player/')) { closeInfo(); selected = null; serverUrl = null; }
     });
+    // Before the native player opens a torrent, have the service warm the file and fetch an
+    // MP4 index stored at the end. Never blocks playback on failure.
+    var prepareController = null;
+    function torrentPath(url) {
+        try {
+            var parsed = new URL(url, location.href);
+            return parsed.origin === location.origin && /^\/[a-f0-9]{40}\/\d+$/i.test(parsed.pathname) ? parsed.pathname + parsed.search : null;
+        } catch (_) { return null; }
+    }
+    window.__akPrepare = function(url) {
+        var path = torrentPath(url);
+        if (!path) return Promise.resolve();
+        if (prepareController) prepareController.abort();
+        var controller = prepareController = new AbortController(), started = Date.now();
+        window.__AK_PREPARE_STATUS__ = 'Preparing torrent file…';
+        var poll = setInterval(function() {
+            fetch('/ak/prepare', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(data) {
+                var job = (data.jobs || [])[0];
+                if (!job || controller !== prepareController) return;
+                var waited = Math.round((Date.now() - started) / 1000) + ' s';
+                window.__AK_PREPARE_STATUS__ = 'Preparing file: ' + job.phase + (job.target ? ' ' + size(job.bytes) + ' / ' + size(job.target) : '') + ' · ' + waited;
+            }).catch(function() {});
+        }, 1000);
+        return fetch('/ak/prepare', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: path }), signal: controller.signal
+        }).then(function(r) { return r.json(); }).catch(function() {}).then(function() {
+            clearInterval(poll);
+            if (controller === prepareController) { prepareController = null; window.__AK_PREPARE_STATUS__ = ''; }
+        });
+    };
+    // A cold torrent can make the native player report an unsupported source before data
+    // arrives. Retry torrent streams in-app before the LG media player hand-off.
+    window.__akShouldRetry = function(url, attempt) { return !!torrentPath(url) && attempt <= 2; };
+    window.addEventListener('hashchange', function() {
+        if (!location.hash.startsWith('#/player/') && prepareController) { prepareController.abort(); prepareController = null; window.__AK_PREPARE_STATUS__ = ''; }
+    });
     // Renew a service-side lease while paused; the service keeps the Mac engine alive
     // even between TV UI ticks. Stop on play, navigation or app exit. No TV disk cache.
     var pauseBusy = false, pauseActive = false, pauseKey = '', pauseRenewed = 0, external = false;
@@ -144,8 +182,10 @@
     });
     setInterval(syncPausedDownload, 5000);
     // Route the WASM core, tracks, subtitles and telemetry through one selected backend.
-    var syncing = false;
-    var sync = setInterval(async function() {
+    // Each check serializes core state across the worker boundary, so check every 2 s only
+    // until the URL is confirmed, then every 30 s and after navigation, never during playback.
+    var syncing = false, confirmed = 0, nextSync = 0;
+    async function syncServer() {
         if (!window.core || syncing) return;
         syncing = true;
         try {
@@ -155,12 +195,19 @@
             var endpoint = location.origin + '/';
             var settings = Object.assign({}, state.profile.settings, { streamingServerUrl: endpoint });
             if (state.profile.settings.streamingServerUrl !== endpoint) {
+                confirmed = 0;
                 await window.core.dispatch({ action: 'Ctx', args: { action: 'UpdateSettings', args: settings } }, 'ctx');
                 await window.core.dispatch({ action: 'StreamingServer', args: { action: 'Reload' } }, 'streaming_server');
-            }
+            } else confirmed++;
         } catch (error) { console.warn('Server setup sync:', error.message); }
         finally { syncing = false; }
+    }
+    setInterval(function() {
+        if (location.hash.startsWith('#/player/') || Date.now() < nextSync) return;
+        nextSync = Date.now() + (confirmed >= 3 ? 30000 : 2000);
+        syncServer();
     }, 2000);
+    window.addEventListener('hashchange', function() { nextSync = 0; });
     fetch('/ak/config').then(function(r) { return r.json(); }).then(function(data) {
         if (!data.configured) location.replace('/setup.html');
         external = data.config.mode === 'external';
