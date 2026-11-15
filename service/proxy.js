@@ -4,6 +4,7 @@ var https = require('https');
 var fs = require('fs');
 var path = require('path');
 var spawn = require('child_process').spawn;
+var createDiscovery = require('./discovery').createDiscovery;
 var LOCAL_URL = 'http://127.0.0.1:11479';
 var PROFILES = {
     balanced: { btMaxConnections: 100, btDownloadSpeedSoftLimit: 4194304, btDownloadSpeedHardLimit: 15728640, btMinPeersForStable: 5 },
@@ -31,6 +32,7 @@ function createApp(options) {
     var configFile = options.configFile || path.join(__dirname, 'ak-config.json');
     var config = { mode: 'tv', profile: 'balanced', serverUrl: '' };
     var configured = false;
+    var discovery = createDiscovery(options.discovery);
     try { config = normalizeConfig(JSON.parse(fs.readFileSync(configFile, 'utf8'))); configured = true; } catch (_) {}
     var child = null, starting = null, engineError = null;
     var activeRequests = 0, lastActivity = Date.now();
@@ -131,6 +133,12 @@ function createApp(options) {
         var pathname = req.url.split('?')[0];
         if (pathname.startsWith('/ak/')) {
             if (req.headers.origin && req.headers.origin !== 'http://' + req.headers.host) return json(res, 403, { error: 'Origin rejected.' });
+            if (pathname === '/ak/discovery') {
+                if (req.method === 'POST') return json(res, 202, discovery.start());
+                if (req.method === 'GET') return json(res, 200, discovery.state());
+                if (req.method === 'DELETE') { discovery.cancel(); return json(res, 200, discovery.state()); }
+                return json(res, 405, { error: 'Use POST, GET or DELETE for server discovery.' });
+            }
             if (pathname === '/ak/config' && req.method === 'GET') return json(res, 200, { configured: configured, config: config });
             if (pathname === '/ak/status' && req.method === 'GET') {
                 return json(res, 200, { mode: config.mode, profile: config.profile, backend: target(), localRunning: !!child, error: engineError, memory: process.memoryUsage().rss });
@@ -187,9 +195,9 @@ function createApp(options) {
     idleTimer.unref();
     // webOS can quit the service during upgrades without closing its HTTP server first.
     process.once('exit', stopLocal);
-    server.shutdown = function() { stopLocal(); server.close(); };
+    server.shutdown = function() { discovery.cancel(); stopLocal(); server.close(); };
     server.on('close', function() {
-        stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
+        discovery.cancel(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
         Object.values(agents).forEach(function(agent) { agent.destroy(); });
     });
     return server;

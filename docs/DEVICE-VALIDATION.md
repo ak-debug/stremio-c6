@@ -32,3 +32,11 @@ No claims of buffer-free internet torrents, a particular throughput ceiling, lon
 The Mac production background service and external HDD/SSD cache have not been installed/configured. The user can operate entirely from the TV interface once a compatible background server is running; a NAS shared folder alone cannot download live torrent pieces.
 
 No TV root or USB permission changes were made. USB disk caching is not exposed in this Developer Mode build. HDD/SSD caching belongs on the Mac/server.
+
+## Update 1.1.1 — server discovery
+
+Installed and launched 1.1.1 on the same C6. All nine automated tests and IPK timestamp checks pass. The TV's own network search enumerated 253 nearby addresses and found both a temporary HTTP metadata fixture and a separate live Stremio 4.22.4 server. The fixture did not contain a torrent engine or download/cache any content and was removed after testing.
+
+The new Playback setup screen fits the 1920×1080 viewport with discovery results and Save controls visible. Selecting a result populated the URL without changing saved TV-only mode. The Stop control aborted a subsequent search after 13 of 253 checks. The existing TV backend connection check still returned server 4.20.17 with cacheSize 0. No new torrent playback or personal-server configuration was performed for this update.
+
+Search verifies compatible settings responses on HTTP port 11470. It does not claim to find HTTPS-only, custom-port, IPv6-only or isolated/routed servers; manual entry remains available. Discovery results do not identify whether a computer is personal or corporate—choose an appropriate machine yourself before saving.
