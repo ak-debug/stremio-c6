@@ -14,11 +14,11 @@ async function fixture(handler) {
     return { server, url: `http://127.0.0.1:${server.address().port}`, async close() { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } };
 }
 
-test('keeps a paused external torrent alive with header-only requests, renews and expires its lease', async () => {
+test('keeps a paused external torrent alive with complete one-byte requests, renews and expires its lease', async () => {
     const calls = [];
     const backend = await fixture((req, res) => {
         calls.push({ method: req.method, range: req.headers.range, url: req.url });
-        res.writeHead(206, { 'Content-Length': 25000000000 }); res.end();
+        res.writeHead(206, { 'Content-Range': 'bytes 0-0/25000000000', 'Content-Length': 1 }); res.end('x');
     });
     const keeper = createPausedDownload({ backend: () => backend.url, settings: async () => ({ values: { cacheSize: 2147483648 } }), interval: 20, lease: 160 });
     try {
@@ -26,7 +26,7 @@ test('keeps a paused external torrent alive with header-only requests, renews an
         await until(() => calls.length >= 2 && keeper.state().lastSuccess);
         await keeper.renew({ infoHash: hash, fileIdx: 2 });
         assert.equal(keeper.state().active, true);
-        assert.deepEqual(calls[0], { method: 'HEAD', range: 'bytes=0-', url: `/${hash}/2` });
+        assert.deepEqual(calls[0], { method: 'GET', range: 'bytes=0-0', url: `/${hash}/2` });
         await until(() => !keeper.state().active);
         const count = calls.length; await delay(60); assert.equal(calls.length, count);
     } finally { keeper.shutdown(); await backend.close(); }

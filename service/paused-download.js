@@ -21,12 +21,13 @@ function createPausedDownload(options) {
         busy = true;
         var current = job, token = generation;
         try {
-            // Open-ended HEAD preselects the file and resets EngineFS's inactivity timer.
-            // HEAD returns headers only, so torrent/cache work stays on the external server.
+            // A one-byte request preselects the file and resets EngineFS's inactivity timer while
+            // torrent/cache work stays on the external server. It completes normally: HEAD and
+            // aborted requests leak a never-closed stream on Stremio's server.
             await new Promise(function(resolve, reject) {
                 var url = new URL('/' + current.infoHash + '/' + current.fileIdx, current.backend);
                 var pending = (url.protocol === 'https:' ? https : http).request(url, {
-                    method: 'HEAD', headers: { Range: 'bytes=0-' }
+                    headers: { Range: 'bytes=0-0' }
                 }, function(res) {
                     res.resume();
                     res.on('error', reject);
@@ -64,6 +65,7 @@ function createPausedDownload(options) {
         return state();
     }
     var timer = setInterval(tick, interval); timer.unref();
-    return { renew: renew, stop: stop, state: state, shutdown: function() { stop(); clearInterval(timer); } };
+    function holds(infoHash) { return !!job && job.infoHash === infoHash; }
+    return { renew: renew, stop: stop, state: state, holds: holds, shutdown: function() { stop(); clearInterval(timer); } };
 }
 module.exports = { createPausedDownload: createPausedDownload };

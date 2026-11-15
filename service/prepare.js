@@ -50,7 +50,7 @@ function createPrepare(options) {
                     var take = Math.min(chunk.length, want - received);
                     received += take; job.bytes += take;
                     if (keep && take) chunks.push(take === chunk.length ? chunk : chunk.subarray(0, take));
-                    if (received >= want) { res.destroy(); finish(); }
+                    if (received >= want) { if (res.statusCode === 200) res.destroy(); finish(); }
                 });
                 res.on('end', finish);
                 res.on('error', function(error) { if (received < want) reject(error); });

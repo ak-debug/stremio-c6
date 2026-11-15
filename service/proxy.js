@@ -7,6 +7,8 @@ var spawn = require('child_process').spawn;
 var createDiscovery = require('./discovery').createDiscovery;
 var createPausedDownload = require('./paused-download').createPausedDownload;
 var createPrepare = require('./prepare').createPrepare;
+var createReadAhead = require('./read-ahead').createReadAhead;
+var engineCleanup = require('./engine-cleanup');
 var LOCAL_URL = 'http://127.0.0.1:11479';
 var PROFILES = {
     balanced: { btMaxConnections: 100, btDownloadSpeedSoftLimit: 4194304, btDownloadSpeedHardLimit: 15728640, btMinPeersForStable: 5 },
@@ -74,6 +76,14 @@ function createApp(options) {
         agent: function(protocol) { return agents[protocol]; },
         timeout: options.prepareTimeout
     });
+    var readAhead = createReadAhead(Object.assign({ agent: function(protocol) { return agents[protocol]; } }, options.readAheadOptions));
+    var cleanup = engineCleanup.createEngineCleanup(Object.assign({
+        backend: function() { return config.mode === 'external' ? (options.target || config.serverUrl) : null; },
+        agent: function(protocol) { return agents[protocol]; },
+        keep: function(hash) { return pausedDownload.holds(hash); },
+        canRefresh: function(hash) { return readAhead.aheadFor(hash) >= 48 * 1048576; }
+    }, options.cleanupOptions));
+    function useReadAhead() { return options.readAhead !== undefined ? options.readAhead : config.mode === 'external'; }
     function stopLocal() {
         if (child) child.kill();
         child = null;
@@ -170,6 +180,7 @@ function createApp(options) {
                     res.once('close', function() { activeRequests--; lastActivity = Date.now(); if (!res.writableEnded) control.abort(); });
                     try {
                         var input = JSON.parse(Buffer.concat(prepChunks).toString());
+                        res.once('close', cleanup.hold(engineCleanup.mediaHash(String(input && input.url).split('?')[0])));
                         await ensureBackend();
                         var result = await prepare.prepare(input, control.signal);
                         if (!res.destroyed) json(res, 200, result);
@@ -185,7 +196,7 @@ function createApp(options) {
             }
             if (pathname === '/ak/config' && req.method === 'GET') return json(res, 200, { configured: configured, config: config });
             if (pathname === '/ak/status' && req.method === 'GET') {
-                return json(res, 200, { mode: config.mode, profile: config.profile, backend: target(), localRunning: !!child, error: engineError, memory: process.memoryUsage().rss });
+                return json(res, 200, { mode: config.mode, profile: config.profile, backend: target(), localRunning: !!child, error: engineError, memory: process.memoryUsage().rss, readAhead: readAhead.state(), cleanup: cleanup.state() });
             }
             if (pathname === '/ak/config' && req.method === 'PUT') {
                 var chunks = [], bytes = 0;
@@ -196,7 +207,7 @@ function createApp(options) {
                         if (activeRequests || starting) throw new Error('Stop playback and wait for the server to finish starting before changing setup.');
                         fs.writeFileSync(configFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
                         fs.renameSync(configFile + '.tmp', configFile);
-                        pausedDownload.stop(); stopLocal(); config = next; configured = true;
+                        pausedDownload.stop(); readAhead.shutdown(); readAhead = createReadAhead(Object.assign({ agent: function(protocol) { return agents[protocol]; } }, options.readAheadOptions)); stopLocal(); config = next; configured = true;
                         json(res, 200, { success: true, config: config });
                     } catch (error) { json(res, 400, { error: error.message }); }
                 });
@@ -215,6 +226,7 @@ function createApp(options) {
         if (['GET', 'HEAD'].includes(req.method) && serveStatic(req, res, pathname)) return;
         activeRequests++;
         res.once('close', function() { activeRequests--; lastActivity = Date.now(); });
+        res.once('close', cleanup.hold(engineCleanup.mediaHash(pathname)));
         try { await ensureBackend(); } catch (error) { return json(res, 502, { error: error.message }); }
         if (res.destroyed) return;
         var base = options.target || target();
@@ -222,6 +234,8 @@ function createApp(options) {
         var url = new URL(base);
         url.pathname = pathname;
         url.search = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+        if (useReadAhead() && await readAhead.handle(req, res, url)) return;
+        if (res.destroyed) return;
         var headers = Object.assign({}, req.headers, { host: url.host });
         delete headers.origin; delete headers.referer; delete headers.connection;
         var upstream = (url.protocol === 'https:' ? https : http).request(url, { method: req.method, headers: headers, agent: agents[url.protocol] }, function(reply) {
@@ -239,9 +253,9 @@ function createApp(options) {
     idleTimer.unref();
     // webOS can quit the service during upgrades without closing its HTTP server first.
     process.once('exit', stopLocal);
-    server.shutdown = function() { discovery.cancel(); pausedDownload.shutdown(); prepare.shutdown(); stopLocal(); server.close(); };
+    server.shutdown = function() { discovery.cancel(); pausedDownload.shutdown(); prepare.shutdown(); readAhead.shutdown(); cleanup.shutdown(); stopLocal(); server.close(); };
     server.on('close', function() {
-        discovery.cancel(); pausedDownload.shutdown(); prepare.shutdown(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
+        discovery.cancel(); pausedDownload.shutdown(); prepare.shutdown(); readAhead.shutdown(); cleanup.shutdown(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
         Object.values(agents).forEach(function(agent) { agent.destroy(); });
     });
     return server;

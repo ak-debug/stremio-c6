@@ -18,6 +18,15 @@
         }
         return 0;
     }
+    // The service reads ahead of the native player, whose own buffer stays around 10 s.
+    function readAheadText(status, key) {
+        var readers = status && status.readAhead && status.readAhead.readers || [];
+        var reader = readers.find(function(r) { return r.file === '/' + key.toLowerCase() && r.clients && typeof r.ahead === 'number'; });
+        if (!reader) return '';
+        var video = Array.from(document.querySelectorAll('video')).find(function(v) { return v.readyState > 0; });
+        var seconds = video && video.duration > 0 && reader.total ? reader.ahead / (reader.total / video.duration) : null;
+        return 'TV read-ahead ' + size(reader.ahead) + (seconds === null ? '' : ' (~' + Math.round(seconds) + ' s)') + '\n';
+    }
     function panel(getSelected, getServerUrl) {
         var el = document.createElement('div');
         el.className = 'torrent-stats';
@@ -48,6 +57,8 @@
                 if (!reply.ok) throw new Error('HTTP ' + reply.status);
                 var data = await reply.json();
                 if (!data || typeof data.downloadSpeed !== 'number') throw new Error('Connecting to peers');
+                var status = await fetch('/ak/status', { signal: controller.signal, cache: 'no-store' }).then(function(r) { return r.json(); }).catch(function() { return null; });
+                prefix += readAheadText(status, key);
                 var now = Date.now();
                 // Derive upload from cumulative bytes: older server builds misreport uploadSpeed.
                 var upload = previous && previous.key === key && data.uploaded >= previous.uploaded ?

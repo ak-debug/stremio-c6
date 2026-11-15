@@ -78,7 +78,7 @@ test('pause-download API uses only the selected external server and stops on req
     let heads = 0;
     const backend = http.createServer((req, res) => {
         if (req.url === '/settings') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ values: { cacheSize: 2147483648 } })); }
-        if (req.method === 'HEAD') { heads++; assert.equal(req.headers.range, 'bytes=0-'); return res.writeHead(206).end(); }
+        if (req.method === 'GET' && req.url === '/' + 'a'.repeat(40) + '/0') { heads++; assert.equal(req.headers.range, 'bytes=0-0'); return res.writeHead(206, { 'Content-Range': 'bytes 0-0/10' }).end('x'); }
         res.writeHead(404).end();
     });
     const target = await listen(backend);
