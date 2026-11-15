@@ -1,11 +1,7 @@
-# Stremio AK 1.1.1 — local server discovery
+# Stremio AK 1.1.1
 
-Adds **Discover servers** to Playback setup alongside manual address entry. Search verifies compatible Stremio HTTP servers on port 11470, displays their address/version/cache status, and lets the user fill the address by selecting a result. The server is changed only after saving.
+Adds **Discover servers** to Playback setup. Search verifies compatible HTTP servers on port 11470, displays address/version/cache status, and fills the URL when a result is selected. The backend changes only after saving.
 
-Includes progress, Stop, bounded parallelism, cancellation on leaving setup, response-size/deadline limits, and private-IPv4/subnet restrictions. Manual entry remains necessary for HTTPS-only/custom-port servers or networks that block discovery. This is not a guarantee of discovering every server on every routed/VLAN network.
+Includes progress, Stop, bounded concurrency, cancellation, deadlines, and nearby private-IPv4 restrictions. HTTPS-only/custom-port endpoints and isolated networks may need manual entry.
 
-The existing TV-only and external-server modes, torrent telemetry, source picker, audio/subtitle/webOS fixes and 45 MiB TV ring buffer are retained. No permanent Mac server or USB-TV cache is installed by this update.
-
-Nine automated tests cover discovery planning, compatible-server identification, response limits/timeouts, cancellation, concurrency, missing interfaces and the existing streaming proxy behavior. Actual model observations are recorded in [device validation](DEVICE-VALIDATION.md).
-
-Unofficial community fork of kieranbrown/stremio-webos with selected jrubimf/StremioR contributions. Public binary publication remains pending the [inherited licensing and redistribution review](RELEASE-READINESS.md).
+See [external-server setup](MAC-SERVER.md), [device validation](DEVICE-VALIDATION.md), and [release status](RELEASE-READINESS.md).
