@@ -30,3 +30,11 @@ On The Odyssey (2026), a 39.3 GB UHD BDRip MKV, the Mac downloaded 2.5–6.5 MiB
 - A read-ahead buffer that has served at least 64 MiB keeps filling for 90 s after its player disconnects, and keeps 32 MiB already played, so a reloading player resumes from memory. Re-reads of the first 64 MiB (the header a reloading player fetches) no longer discard it. Other idle buffers are freed after 15 s.
 
 25 automated tests, including resuming from the buffer after a reconnect.
+
+## 1.2.0 — Keep the server busy on what plays next
+
+- **Several segments in flight.** The read-ahead keeps 3 closed 16 MiB requests open at once instead of one, so Stremio's stream-priority window covers about 48 MiB ahead. Previously the window shrank to a few pieces at the end of each segment, and idle peers were put to work on Stremio's whole-file background download, which starts at the file's first missing piece, behind the player when resuming. Segments still complete normally and are delivered in order.
+- **Pre-download on the Mac (`service/server-ahead.js`).** Once the TV buffer is full, or while paused under the paused-download lease, the service sends one-byte requests, one per piece and up to 24 MiB in flight, up to 6 GiB past the player. Each completes once the Mac has the piece, so the data lands in the Mac's disk cache without leaking streams or using TV memory. The piece size is derived from the server's selections in `/stats.json`. Stats shows "Mac pre-downloaded … (~N min)".
+- **Mac settings:** `btMaxConnections` 200 and `btHandshakeTimeout` 6000 ms (default 20000). A peer that never completes a handshake now frees its slot after 6 s. Stremio's server never listens for incoming peer connections (`engine.listen` is never called), so port forwarding, UPnP and DMZ cannot help.
+
+On device: the 30.7 GB Odyssey source played 44.4 s in 45 s with the TV read-ahead steady at 92–104 MiB, and the Mac downloading at 2–3 MiB/s from 13–52 peers. 28 automated tests.

@@ -76,7 +76,10 @@ function createApp(options) {
         agent: function(protocol) { return agents[protocol]; },
         timeout: options.prepareTimeout
     });
-    var readAhead = createReadAhead(Object.assign({ agent: function(protocol) { return agents[protocol]; } }, options.readAheadOptions));
+    function readAheadOptions() {
+        return Object.assign({ agent: function(protocol) { return agents[protocol]; }, keep: function(hash) { return pausedDownload.holds(hash); } }, options.readAheadOptions);
+    }
+    var readAhead = createReadAhead(readAheadOptions());
     var cleanup = engineCleanup.createEngineCleanup(Object.assign({
         backend: function() { return config.mode === 'external' ? (options.target || config.serverUrl) : null; },
         agent: function(protocol) { return agents[protocol]; },
@@ -207,7 +210,7 @@ function createApp(options) {
                         if (activeRequests || starting) throw new Error('Stop playback and wait for the server to finish starting before changing setup.');
                         fs.writeFileSync(configFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
                         fs.renameSync(configFile + '.tmp', configFile);
-                        pausedDownload.stop(); readAhead.shutdown(); readAhead = createReadAhead(Object.assign({ agent: function(protocol) { return agents[protocol]; } }, options.readAheadOptions)); stopLocal(); config = next; configured = true;
+                        pausedDownload.stop(); readAhead.shutdown(); readAhead = createReadAhead(readAheadOptions()); stopLocal(); config = next; configured = true;
                         json(res, 200, { success: true, config: config });
                     } catch (error) { json(res, 400, { error: error.message }); }
                 });

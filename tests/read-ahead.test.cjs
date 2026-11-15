@@ -35,7 +35,7 @@ async function setup(file, cut, readAheadOptions) {
     const backend = backendFor(file, log, cut);
     const target = await listen(backend);
     const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, ensureLocal: async () => {}, readAhead: true,
-        readAheadOptions: Object.assign({ maxAhead: 4 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, memory: () => null }, readAheadOptions) });
+        readAheadOptions: Object.assign({ maxAhead: 4 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, parallel: 1, serverAhead: false, memory: () => null }, readAheadOptions) });
     const base = await listen(proxy);
     return { log, base, done: async () => { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); } };
 }
@@ -93,7 +93,8 @@ test('passes small index probes straight through and reconnects after a dropped 
         reply = await fetch(`${t.base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
         assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file));
         assert.equal(t.log[1], `bytes=0-${2 * MiB - 1}`);
-        assert.equal(t.log[2], `bytes=${1.5 * MiB}-${3.5 * MiB - 1}`, t.log.join(' '));
+        // The dropped segment resumes where it stopped, still a closed range.
+        assert.equal(t.log[2], `bytes=${1.5 * MiB}-${2 * MiB - 1}`, t.log.join(' '));
     } finally { await t.done(); }
 });
 
@@ -170,4 +171,80 @@ test('keeps reading ahead while a player that was streaming reconnects, then ser
         assert.ok(Buffer.from(await again.arrayBuffer()).equals(file.subarray(at, at + 4 * MiB)));
         assert.ok(t.log.slice(before).every(range => !range.startsWith(`bytes=${at}-`)), 'resumed from the buffer: ' + t.log.slice(before).join(' '));
     } finally { await t.done(); }
+});
+
+test('keeps several segments in flight and still serves the bytes in order', async () => {
+    const file = crypto.randomBytes(20 * MiB);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-ra-'));
+    const log = [];
+    let open = 0, most = 0;
+    // Later segments answer first, as a torrent server does when their pieces arrive first.
+    const backend = http.createServer((req, res) => {
+        const m = /bytes=(\d+)-(\d+)/.exec(req.headers.range);
+        const start = Number(m[1]), end = Math.min(Number(m[2]), file.length - 1);
+        log.push(req.headers.range); open++; most = Math.max(most, open);
+        res.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${file.length}`, 'Content-Length': end - start + 1 });
+        setTimeout(() => { open--; res.end(file.subarray(start, end + 1)); }, start === 0 ? 5 : start % (4 * MiB) === 0 ? 60 : 20);
+    });
+    const target = await listen(backend);
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, ensureLocal: async () => {}, readAhead: true,
+        readAheadOptions: { maxAhead: 12 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, parallel: 3, serverAhead: false, memory: () => null } });
+    const base = await listen(proxy);
+    try {
+        const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
+        assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file));
+        assert.equal(most, 3, 'three segments were requested at once: ' + log.join(' '));
+        for (const range of log) { const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 2 * MiB, range); }
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
+});
+
+test('finds the piece size from the server selections', () => {
+    const { findPieceLength } = require('../service/server-ahead');
+    const file = { offset: 0, length: 30765780646 };
+    // Real values from the Mac: the whole-file selection ends 4 pieces past this 30.7 GB file.
+    assert.deepEqual(findPieceLength(file, [{ from: 0, to: 58684, priority: 0 }]), { size: 524288, offset: 0 });
+    assert.deepEqual(findPieceLength({ offset: 0, length: 39287910325 }, [{ from: 0, to: 74936, priority: 0 }]), { size: 524288, offset: 0 });
+    // Without a whole-file selection, a known request range identifies it.
+    assert.deepEqual(findPieceLength({ offset: 1000, length: 5e9 }, [{ from: 4, to: 16, priority: 1 }], [[2 * MiB, 8 * MiB - 1]]), { size: 524288, offset: 1000 });
+    assert.equal(findPieceLength(file, []), null);
+});
+
+test('when the TV buffer is full, asks the server to download pieces further ahead with one-byte requests', async () => {
+    const file = crypto.randomBytes(40 * MiB), piece = MiB;
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-ra-'));
+    const probes = [], segments = [];
+    const backend = http.createServer((req, res) => {
+        if (req.url === '/stats.json') {
+            res.setHeader('Content-Type', 'application/json');
+            return res.end(JSON.stringify({ [HASH]: { files: [{ offset: 0, length: file.length }], selections: [{ from: 0, to: file.length / piece - 1, priority: 0 }] } }));
+        }
+        const m = /bytes=(\d+)-(\d+)/.exec(req.headers.range);
+        const start = Number(m[1]), end = Math.min(Number(m[2]), file.length - 1);
+        (start === end ? probes : segments).push(start);
+        res.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${file.length}`, 'Content-Length': end - start + 1 });
+        res.end(file.subarray(start, end + 1));
+    });
+    const target = await listen(backend);
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, ensureLocal: async () => {}, readAhead: true,
+        readAheadOptions: { maxAhead: 4 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, parallel: 2, memory: () => null, serverAhead: { lead: 16 * MiB, maxBytes: 4 * MiB } } });
+    const base = await listen(proxy);
+    try {
+        const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
+        const reader = reply.body.getReader();
+        await reader.read();
+        let state;
+        for (let n = 0; n < 100; n++) {
+            await new Promise(r => setTimeout(r, 20));
+            state = (await (await fetch(base + '/ak/status')).json()).readAhead.readers[0];
+            if (state && state.serverAhead >= 15 * MiB && probes.length >= 8) break;
+        }
+        assert.ok(state.serverAhead >= 15 * MiB && state.serverAhead <= 18 * MiB, JSON.stringify(state));
+        // One request per piece, in order with no gaps, starting past the TV's first requests.
+        const sorted = probes.slice().sort((a, b) => a - b);
+        assert.ok(sorted[0] >= 4 * MiB && sorted[0] % piece === 0, sorted.join(' '));
+        assert.deepEqual(sorted, sorted.map((_, i) => sorted[0] + i * piece));
+        // The lead is measured from the player position, which the proxy's socket buffers move a little.
+        assert.ok(probes.every(at => at < 20 * MiB), probes.join(' '));
+        await reader.cancel();
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });
