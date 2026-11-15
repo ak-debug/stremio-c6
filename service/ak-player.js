@@ -54,8 +54,9 @@
                 var lines = [prefix + '↓ ' + size(data.downloadSpeed) + '/s    ↑ ' + (upload === null ? 'measuring…' : size(upload) + '/s'),
                     'Connected peers ' + (data.peers || 0) + '    Unchoked ' + (data.unchoked || 0) +
                     (typeof data.seeders === 'number' ? '    Seeders ' + data.seeders : ''),
-                    'Known peers ' + (data.unique || 0) + '    Connection limit ' + (data.swarmSize || 0) + '    Downloaded ' + size(data.downloaded)];
+                    'Known peers ' + (data.unique || 0) + '    Connection limit ' + (data.swarmSize || 0) + '    Downloaded this session ' + size(data.downloaded)];
                 if (data.streamLen) lines.push('File pieces available ' + ((data.streamProgress || 0) * 100).toFixed(1) + '%');
+                if (window.__AK_PAUSED_DOWNLOAD__) lines.push(window.__AK_PAUSED_DOWNLOAD__);
                 el.textContent = lines.join('\n');
             } catch (error) {
                 el.textContent = prefix + (error.name === 'AbortError' ? 'Stats timed out' : 'Stats unavailable: ' + error.message);
@@ -99,6 +100,49 @@
     window.addEventListener('hashchange', function() {
         if (!location.hash.startsWith('#/player/')) { closeInfo(); selected = null; serverUrl = null; }
     });
+    // Renew a service-side lease while paused; the service keeps the Mac engine alive
+    // even between TV UI ticks. Stop on play, navigation or app exit. No TV disk cache.
+    var pauseBusy = false, pauseActive = false, pauseKey = '', pauseRenewed = 0, external = false;
+    function stopPausedDownload() {
+        if (!pauseActive && !pauseKey) return;
+        pauseActive = false; pauseKey = ''; pauseRenewed = 0; window.__AK_PAUSED_DOWNLOAD__ = '';
+        fetch('/ak/paused-download', { method: 'DELETE', keepalive: true }).catch(function() {});
+    }
+    async function syncPausedDownload() {
+        if (pauseBusy) return;
+        var video = document.querySelector('video'), item = selected && selected(), stream = item && item.stream;
+        if (!external || !location.hash.startsWith('#/player/') || !video || !video.paused || video.readyState < 1 || video.ended || video.error || !stream || !stream.infoHash) {
+            stopPausedDownload(); return;
+        }
+        var fileIdx = stream.fileIdx;
+        if (!Number.isInteger(fileIdx)) {
+            try {
+                var match = new URL(video.currentSrc).pathname.match(/^\/([a-f0-9]{40})\/(\d+)(?:\/|$)/i);
+                if (match && match[1].toLowerCase() === stream.infoHash.toLowerCase()) fileIdx = Number(match[2]);
+            } catch (_) {}
+        }
+        if (!Number.isInteger(fileIdx)) return;
+        var key = stream.infoHash + '/' + fileIdx;
+        if (pauseActive && key === pauseKey && Date.now() - pauseRenewed < 20000) return;
+        pauseBusy = true;
+        try {
+            var response = await fetch('/ak/paused-download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ infoHash: stream.infoHash, fileIdx: fileIdx }) });
+            var status = await response.json();
+            if (!response.ok) throw new Error(status.error || 'Server unavailable');
+            pauseActive = status.active; pauseKey = key; pauseRenewed = Date.now();
+            window.__AK_PAUSED_DOWNLOAD__ = status.error ? 'Paused download: ' + status.error : status.lastSuccess ? 'Mac download kept active while paused' : 'Starting Mac paused download…';
+            if (!video.paused || !location.hash.startsWith('#/player/')) stopPausedDownload();
+        } catch (error) {
+            window.__AK_PAUSED_DOWNLOAD__ = 'Paused download: ' + error.message;
+        } finally { pauseBusy = false; }
+    }
+    document.addEventListener('pause', syncPausedDownload, true);
+    document.addEventListener('play', stopPausedDownload, true);
+    window.addEventListener('hashchange', function() { if (!location.hash.startsWith('#/player/')) stopPausedDownload(); });
+    window.addEventListener('pagehide', function() {
+        navigator.sendBeacon('/ak/paused-download', JSON.stringify({ stop: true }));
+    });
+    setInterval(syncPausedDownload, 5000);
     // Route the WASM core, tracks, subtitles and telemetry through one selected backend.
     var syncing = false;
     var sync = setInterval(async function() {
@@ -119,6 +163,7 @@
     }, 2000);
     fetch('/ak/config').then(function(r) { return r.json(); }).then(function(data) {
         if (!data.configured) location.replace('/setup.html');
+        external = data.config.mode === 'external';
         window.__AK_BACKEND_LABEL__ = data.config.mode === 'external' ? 'Mac / external server' : 'TV streaming server';
     }).catch(function(error) { console.warn('Playback setup unavailable:', error.message); });
 })();

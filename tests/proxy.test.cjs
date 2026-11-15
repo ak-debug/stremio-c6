@@ -72,3 +72,28 @@ test('cancels backend media requests when the player disconnects', async () => {
         await Promise.race([stopped, new Promise((_, reject) => setTimeout(() => reject(new Error('Upstream was not cancelled')), 1500).unref())]);
     } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });
+
+test('pause-download API uses only the selected external server and stops on request', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-pause-'));
+    let heads = 0;
+    const backend = http.createServer((req, res) => {
+        if (req.url === '/settings') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ values: { cacheSize: 2147483648 } })); }
+        if (req.method === 'HEAD') { heads++; assert.equal(req.headers.range, 'bytes=0-'); return res.writeHead(206).end(); }
+        res.writeHead(404).end();
+    });
+    const target = await listen(backend);
+    fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({ mode: 'external', serverUrl: 'http://192.168.0.9:11470' }));
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target });
+    const base = await listen(proxy), input = { infoHash: 'a'.repeat(40), fileIdx: 0 };
+    try {
+        const post = body => fetch(base + '/ak/paused-download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        let reply = await fetch(base + '/ak/paused-download', { method: 'POST', headers: { Origin: 'https://other.example' }, body: JSON.stringify(input) });
+        assert.equal(reply.status, 403); assert.equal(heads, 0);
+        reply = await post({ infoHash: 'bad', fileIdx: 0 }); assert.equal(reply.status, 400);
+        reply = await post(input); assert.equal((await reply.json()).active, true);
+        for (let n = 0; !heads && n < 30; n++) await new Promise(resolve => setTimeout(resolve, 10));
+        assert.equal(heads, 1);
+        reply = await post({ stop: true }); assert.equal((await reply.json()).active, false);
+        reply = await fetch(base + '/ak/paused-download'); assert.equal((await reply.json()).active, false);
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
+});

@@ -5,6 +5,7 @@ var fs = require('fs');
 var path = require('path');
 var spawn = require('child_process').spawn;
 var createDiscovery = require('./discovery').createDiscovery;
+var createPausedDownload = require('./paused-download').createPausedDownload;
 var LOCAL_URL = 'http://127.0.0.1:11479';
 var PROFILES = {
     balanced: { btMaxConnections: 100, btDownloadSpeedSoftLimit: 4194304, btDownloadSpeedHardLimit: 15728640, btMinPeersForStable: 5 },
@@ -63,6 +64,10 @@ function createApp(options) {
             req.end(data);
         });
     }
+    var pausedDownload = createPausedDownload({
+        backend: function() { return config.mode === 'external' ? (options.target || config.serverUrl) : null; },
+        settings: function(base) { return requestJson(base, '/settings'); }
+    });
     function stopLocal() {
         if (child) child.kill();
         child = null;
@@ -133,6 +138,21 @@ function createApp(options) {
         var pathname = req.url.split('?')[0];
         if (pathname.startsWith('/ak/')) {
             if (req.headers.origin && req.headers.origin !== 'http://' + req.headers.host) return json(res, 403, { error: 'Origin rejected.' });
+            if (pathname === '/ak/paused-download') {
+                if (req.method === 'GET') return json(res, 200, pausedDownload.state());
+                if (req.method === 'DELETE') { pausedDownload.stop(); return json(res, 200, pausedDownload.state()); }
+                if (req.method !== 'POST') return json(res, 405, { error: 'Use GET, POST or DELETE.' });
+                var pauseChunks = [], pauseBytes = 0;
+                req.on('data', function(chunk) { pauseBytes += chunk.length; if (pauseBytes > 1024) req.destroy(); else pauseChunks.push(chunk); });
+                req.on('end', async function() {
+                    try {
+                        var input = JSON.parse(Buffer.concat(pauseChunks).toString());
+                        if (input.stop) { pausedDownload.stop(); return json(res, 200, pausedDownload.state()); }
+                        return json(res, 200, await pausedDownload.renew(input));
+                    } catch (error) { return json(res, 400, { error: error.message }); }
+                });
+                return;
+            }
             if (pathname === '/ak/discovery') {
                 if (req.method === 'POST') return json(res, 202, discovery.start());
                 if (req.method === 'GET') return json(res, 200, discovery.state());
@@ -152,7 +172,7 @@ function createApp(options) {
                         if (activeRequests || starting) throw new Error('Stop playback and wait for the server to finish starting before changing setup.');
                         fs.writeFileSync(configFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
                         fs.renameSync(configFile + '.tmp', configFile);
-                        stopLocal(); config = next; configured = true;
+                        pausedDownload.stop(); stopLocal(); config = next; configured = true;
                         json(res, 200, { success: true, config: config });
                     } catch (error) { json(res, 400, { error: error.message }); }
                 });
@@ -195,9 +215,9 @@ function createApp(options) {
     idleTimer.unref();
     // webOS can quit the service during upgrades without closing its HTTP server first.
     process.once('exit', stopLocal);
-    server.shutdown = function() { discovery.cancel(); stopLocal(); server.close(); };
+    server.shutdown = function() { discovery.cancel(); pausedDownload.shutdown(); stopLocal(); server.close(); };
     server.on('close', function() {
-        discovery.cancel(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
+        discovery.cancel(); pausedDownload.shutdown(); stopLocal(); clearInterval(idleTimer); process.removeListener('exit', stopLocal);
         Object.values(agents).forEach(function(agent) { agent.destroy(); });
     });
     return server;

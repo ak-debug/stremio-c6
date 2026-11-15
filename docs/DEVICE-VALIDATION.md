@@ -45,6 +45,18 @@ Search verifies compatible settings responses on HTTP port 11470. It does not cl
 
 Installed 1.1.2 with a Stats button in the existing playback controls. On the owner's working stream, a live test opened the panel and closed it with Back; media source and route remained identical, playback advanced, and paused state remained false. The native player reported 3840×2160. All nine automated tests, generated JavaScript syntax checks and archive timestamp checks passed.
 
+## 1.1.3 — pause downloads and exact-source restart test
+
+Installed the packaged 1.1.3 build after 13 automated tests, generated JavaScript checks and IPK timestamp verification passed. No software was installed on the Mac and no remote server settings were changed.
+
+The owner explicitly chose Torrentio 4K HDR / Rutracker, listed as 24.01 GB (server file length 25,777,506,350 bytes). Captured that exact torrent/file and the 1360.977-second position, closed the app, installed the update and relaunched. Clicked The Odyssey in the normal Continue Watching row, then its Continue Watching option. Torrent hash, file index, movie and video identifiers all matched the captured source. Playback loaded at 3840×2160 and 1361.916 seconds. No source-order or separate history-section patch was required.
+
+Paused at 1373.962 seconds. The external-server pause lease activated and returned successful HEAD requests. Over 210 seconds, the movie stayed paused at the same position; engine presence remained true in every sample; the downloaded counter rose from 1,030,686,766 to 1,632,241,710 bytes and file-piece availability rose from 3.978% to 6.307%. The owner confirmed the screensaver was showing; downloading continued during it, rising from 1,482,803,246 to 1,632,241,710 bytes in subsequent samples without reset. Normal screensaver policy was retained.
+
+After the owner woke the TV and pressed Play, the pause-only lease was inactive, playback was unpaused and advancing (1385.550 to 1386.554 seconds), the same torrent/file remained selected and the native video was 3840×2160, readyState 4, with no media error. The external backend remained selected and the local TV torrent engine was off.
+
+This validates this TV/server/source combination over a short pause/screensaver cycle. It does not establish permanent cache retention, a durable full-movie Downloads library, indefinite background operation if webOS suspends the UI, or all-source compatibility.
+
 Before installation, live playback inspection reported 3840×2160 native/direct HEVC playback with no media error. The owner checked the LG Picture menu and confirmed HDR mode. This verifies 4K decode plus user-observed HDR activation for that particular stream. It does not verify Dolby Vision, a particular bit depth, source authenticity/mastering, AV sync, long-session memory behavior or frame-drop rate; the platform's frame counters returned unusable zero totals. The detailed pipeline query was denied by the TV.
 
 An attempted maintenance restore of a saved pre-update route did not successfully restore the working stream and showed a player error. The owner selected a working source manually. That source was then preserved during all Stats tests and the maintenance checkpoint removed. Its torrent hash/file index matched the TV's local saved stream-history entry. No claim of successful automatic exact-source reopening is made.

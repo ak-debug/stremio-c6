@@ -25,6 +25,7 @@ The source is public, but inherited licensing is not yet explicit and there is n
 - The TV engine starts on demand and stops when switching to external mode, when the service exits, or after two minutes with no proxy traffic and no active media requests.
 - Separate loopback ports: frontend 8082, backend 11479. Bundled server upload-stat fix, connected-seeder count and enabled HLS-v2 route. Direct playback remains preferred; TV software transcoding of 4K is not a performance target.
 - Discover servers in Playback setup: cancellable local IPv4 search for compatible HTTP Stremio servers on port 11470. Select a verified result to fill the address; saving is explicit. Custom ports/HTTPS-only endpoints remain available through manual entry.
+- Keep downloading while paused on a disk-cached external server, including during the normal TV screensaver. Header-only keep-alive requests keep torrent data on the Mac; playback/navigation stops this lease. This uses ordinary server cache, not a permanent Downloads library. See [pause and cache behavior](docs/RELEASE-NOTES-1.1.3.md).
 - Checksummed frontend/server/FFmpeg, fail-fast patches, syntax validation, proxy tests and IPK timestamp validation.
 
 ## Build and install
@@ -39,7 +40,7 @@ make deploy DEVICE=lgtv
 
 Configure your TV in Developer Mode using LG's CLI first. `make deploy` installs and launches; it does not authenticate to a Stremio account. On first launch choose TV or Mac server, save, then sign in normally. Renew the Developer Mode session before expiry.
 
-Generated output: `io.github.akdebug.stremio_1.1.2_all.ipk`. Download caches are under `.build/downloads`; frontend/server/binaries are generated under `service/`. Never edit generated bundles to make persistent changes; use `patches/` or `scripts/build.py`.
+Generated output: `io.github.akdebug.stremio_1.1.3_all.ipk`. Download caches are under `.build/downloads`; frontend/server/binaries are generated under `service/`. Never edit generated bundles to make persistent changes; use `patches/` or `scripts/build.py`.
 
 ## HDD / SSD and the M2 MacBook Air
 
