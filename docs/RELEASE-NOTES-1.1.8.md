@@ -38,3 +38,11 @@ On The Odyssey (2026), a 39.3 GB UHD BDRip MKV, the Mac downloaded 2.5–6.5 MiB
 - **Mac settings:** `btMaxConnections` 200 and `btHandshakeTimeout` 6000 ms (default 20000). A peer that never completes a handshake now frees its slot after 6 s. Stremio's server never listens for incoming peer connections (`engine.listen` is never called), so port forwarding, UPnP and DMZ cannot help.
 
 On device: the 30.7 GB Odyssey source played 44.4 s in 45 s with the TV read-ahead steady at 92–104 MiB, and the Mac downloading at 2–3 MiB/s from 13–52 peers. 28 automated tests.
+
+## 1.2.1 — Review fixes
+
+- Pre-download backs off for 30 s after 5 failed piece requests in a row, for example while the server restarts a torrent, then resumes. Before, it stopped for the rest of the session. A failed piece is requested again, and the "Mac pre-downloaded" figure stops at it rather than skipping past it.
+- The read-ahead's 5-second check also nudges pre-download, so it resumes while the player is paused and no other events arrive.
+- Stats marks the TV read-ahead as "full" when it has reached its memory limit.
+
+29 automated tests, including pre-download recovering from failed pieces.

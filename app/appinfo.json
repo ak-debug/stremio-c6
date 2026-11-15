@@ -1,6 +1,6 @@
 {
   "id": "io.github.akdebug.stremio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "vendor": "ak-debug",
   "type": "web",
   "main": "index.html",

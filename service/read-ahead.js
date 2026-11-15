@@ -194,9 +194,10 @@ function createReadAhead(options) {
             if (!r.clients.size && now - r.idleSince > (r.served >= resumeAfter ? idle : 15000) && !(keep(hashOf(r)) && r.lastPos !== null)) return dispose(r);
             var head = r.segs[0];
             if (head && head.req && r.clients.size && now - head.lastData > stallMs) head.req.destroy();
+            update(r);
         });
     }
-    var timer = setInterval(sweep, 5000); timer.unref();
+    var timer = setInterval(sweep, options.sweepMs || 5000); timer.unref();
 
     function serve(r, req, res, range) {
         if (range.start >= r.total) { res.writeHead(416, { 'Content-Range': 'bytes */' + r.total }); return res.end(); }

@@ -25,7 +25,7 @@
         if (!reader) return '';
         var video = Array.from(document.querySelectorAll('video')).find(function(v) { return v.readyState > 0; });
         var seconds = video && video.duration > 0 && reader.total ? reader.ahead / (reader.total / video.duration) : null;
-        var text = 'TV read-ahead ' + size(reader.ahead) + (seconds === null ? '' : ' (~' + Math.round(seconds) + ' s)') + '\n';
+        var text = 'TV read-ahead ' + size(reader.ahead) + (seconds === null ? '' : ' (~' + Math.round(seconds) + ' s)') + (reader.paused ? ' · full' : '') + '\n';
         if (typeof reader.serverAhead === 'number' && reader.serverAhead > reader.ahead + 32 * 1048576) {
             var mac = seconds === null ? null : reader.serverAhead / (reader.total / video.duration);
             text += 'Mac pre-downloaded ' + size(reader.serverAhead) + (mac === null ? '' : ' (~' + (mac >= 120 ? Math.round(mac / 60) + ' min' : Math.round(mac) + ' s') + ')') + '\n';

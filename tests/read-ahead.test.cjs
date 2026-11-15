@@ -248,3 +248,36 @@ test('when the TV buffer is full, asks the server to download pieces further ahe
         await reader.cancel();
     } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });
+
+test('pre-download retries pieces the server failed, after backing off', async () => {
+    const file = crypto.randomBytes(24 * MiB), piece = MiB;
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-ra-'));
+    let failing = 5;
+    const probes = [];
+    const backend = http.createServer((req, res) => {
+        if (req.url === '/stats.json') return res.end(JSON.stringify({ [HASH]: { files: [{ offset: 0, length: file.length }], selections: [{ from: 0, to: file.length / piece - 1, priority: 0 }] } }));
+        const m = /bytes=(\d+)-(\d+)/.exec(req.headers.range);
+        const start = Number(m[1]), end = Math.min(Number(m[2]), file.length - 1);
+        if (start === end) { probes.push(start); if (failing > 0) { failing--; res.writeHead(500); return res.end(); } }
+        res.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${file.length}`, 'Content-Length': end - start + 1 });
+        res.end(file.subarray(start, end + 1));
+    });
+    const target = await listen(backend);
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, ensureLocal: async () => {}, readAhead: true,
+        readAheadOptions: { maxAhead: 4 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, parallel: 2, sweepMs: 20, memory: () => null, serverAhead: { lead: 12 * MiB, maxBytes: 2 * MiB, recheck: 100 } } });
+    const base = await listen(proxy);
+    try {
+        const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
+        const reader = reply.body.getReader();
+        await reader.read();
+        let state;
+        for (let n = 0; n < 150; n++) {
+            await new Promise(r => setTimeout(r, 20));
+            state = (await (await fetch(base + '/ak/status')).json()).readAhead.readers[0];
+            if (state && state.serverAhead >= 11 * MiB) break;
+        }
+        assert.equal(failing, 0);
+        assert.ok(state.serverAhead >= 11 * MiB, JSON.stringify(state) + ' ' + probes.join(' '));
+        await reader.cancel();
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
+});

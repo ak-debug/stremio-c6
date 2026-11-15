@@ -71,7 +71,13 @@ function createServerAhead(options) {
         function done(ok) {
             if (finished) return;
             finished = true; inflight--; st.inflight--; st.pending.delete(at);
-            if (ok) { st.completed++; st.failures = 0; } else st.failures++;
+            if (ok) { st.completed++; st.failures = 0; }
+            else {
+                // Request the piece again later; after repeated failures (the server restarting
+                // the torrent, say) back off for a while instead of giving up.
+                st.failures++; st.next = Math.min(st.next, at);
+                if (st.failures >= 5) st.resumeAt = Date.now() + recheck;
+            }
             if (options.onChange) options.onChange(r);
         }
         var req = (url.protocol === 'https:' ? https : http).request(url, {
@@ -93,8 +99,12 @@ function createServerAhead(options) {
         if (r.total === null || pos === Infinity) return;
         var piece = info(r, ranges);
         if (!piece) return;
-        var st = r.serverAhead || (r.serverAhead = { next: 0, inflight: 0, pending: new Set(), completed: 0, failures: 0 });
+        var st = r.serverAhead || (r.serverAhead = { next: 0, inflight: 0, pending: new Set(), completed: 0, failures: 0, resumeAt: 0 });
         if (st.next < from) st.next = from;
+        if (st.failures >= 5) {
+            if (Date.now() < st.resumeAt) return;
+            st.failures = 0;
+        }
         var limit = Math.max(2, Math.min(maxProbes, Math.floor(maxBytes / piece.size)));
         while (inflight < limit && st.failures < 5 && st.next < r.total && st.next - pos < lead) {
             var at = st.next;
