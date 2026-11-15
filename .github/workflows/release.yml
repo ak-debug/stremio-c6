@@ -30,6 +30,9 @@ jobs:
       - name: Package
         run: make package
 
+      - name: Check release notes
+        run: test -f "docs/RELEASE-NOTES-${{ steps.version.outputs.version }}.md"
+
       - name: Generate manifest
         run: |
           IPK="io.github.akdebug.stremio_${{ steps.version.outputs.version }}_all.ipk"
@@ -55,6 +58,9 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
+          prerelease: true
+          body_path: docs/RELEASE-NOTES-${{ steps.version.outputs.version }}.md
           files: |
             io.github.akdebug.stremio_${{ steps.version.outputs.version }}_all.ipk
             manifest.json

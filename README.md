@@ -4,11 +4,22 @@ Personal fork of [kieranbrown/stremio-webos](https://github.com/kieranbrown/stre
 
 App ID: `io.github.akdebug.stremio`. Service ID: `io.github.akdebug.stremio.server`. Installs alongside the official client. Target: OLED55C6PLA, webOS 26, aarch64. Playback quality and torrent speed depend on the media, network and TV decoder.
 
+## Choose how to use it
+
+| Mode | TV | Mac / other computer |
+| --- | --- | --- |
+| TV only | Browse, download torrents and play video | Not required |
+| Mac / external server | Browse and play video | Background service downloads torrents and caches to its HDD/SSD |
+
+The TV app is installed and working. A permanent Mac service has **not** been installed/configured. You can use the TV interface in either mode; external mode does not require starting a movie on the computer. A plain NAS share is not a torrent server. Follow the [Mac server guide](docs/MAC-SERVER.md) for installation, disk-cache setup and TV connection steps.
+
+The source is public, but inherited licensing is not yet explicit and there is no public binary release. See [release readiness](docs/RELEASE-READINESS.md) before redistributing a build as open source.
+
 ## Features
 
 - Upstream webOS 26 detection, preferred native audio language, smaller subtitle presets and keyboard fixes.
 - StremioR source grid, parsed seeder sorting and reduced animation/blur effects.
-- Loading telemetry: download speed, measured upload speed, connected peers/seeders, swarm size, cumulative bytes, file-piece availability and native playable-buffer seconds when available. Info toggles the panel during playback.
+- Loading telemetry: download speed, measured upload speed, connected peers/seeders, known peers, connection limit, cumulative bytes, file-piece availability and native playable-buffer seconds when available. Info toggles the panel during playback.
 - Playback setup under Settings → Server: standalone TV engine or a Mac/external Stremio server, consistently routed through one loopback proxy for tracks, torrents, subtitles and media.
 - TV Balanced profile (100 connections; 15 MiB/s hard throttle parameter) and selectable Fast profile (200; 37.5 MiB/s). Both keep the original 45 MiB RAM ring and 15 MiB read-ahead option. No flash torrent caching.
 - The TV engine starts on demand and stops when switching to external mode, when the service exits, or after two minutes with no proxy traffic and no active media requests.
