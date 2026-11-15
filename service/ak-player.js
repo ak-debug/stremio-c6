@@ -21,16 +21,18 @@
     function panel(getSelected, getServerUrl) {
         var el = document.createElement('div');
         el.className = 'torrent-stats';
-        var attached = false, ticks = 0, timer, previous = null, controller;
-        function stop() { clearTimeout(timer); if (controller) controller.abort(); }
+        var attached = false, ticks = 0, timer, previous = null, controller, stopped = false;
+        function stop() { stopped = true; clearTimeout(timer); if (controller) controller.abort(); }
+        el.__stop = stop;
         async function tick() {
+            if (stopped) return;
             ticks++;
             if (el.isConnected) attached = true;
             else if (attached || ticks > 10) return stop();
             var item = getSelected(), stream = item && item.stream;
             var base = getServerUrl() || location.origin;
             var seconds = bufferSeconds();
-            var prefix = seconds === null ? '' : 'Playable buffer ' + seconds.toFixed(1) + ' s\n';
+            var prefix = (el.dataset.info ? 'Live stats · Stats again or Back to close\n' : '') + (seconds === null ? '' : 'Playable buffer ' + seconds.toFixed(1) + ' s\n');
             if (!stream || !stream.infoHash) {
                 el.textContent = prefix + 'Direct stream';
                 timer = setTimeout(tick, 1000); return;
@@ -59,7 +61,7 @@
                 el.textContent = prefix + (error.name === 'AbortError' ? 'Stats timed out' : 'Stats unavailable: ' + error.message);
             } finally {
                 clearTimeout(deadline); controller = null;
-                if (el.isConnected || !attached) timer = setTimeout(tick, 1000);
+                if (!stopped && (el.isConnected || !attached)) timer = setTimeout(tick, 1000);
             }
         }
         tick();
@@ -70,17 +72,32 @@
         return panel(getSelected, getServerUrl);
     };
     var infoPanel;
-    document.addEventListener('keydown', function(event) {
-        if (event.keyCode !== 457 || !selected) return;
-        event.preventDefault();
-        if (infoPanel && infoPanel.isConnected) { infoPanel.remove(); infoPanel = null; document.body.classList.remove('ak-info-open'); }
+    function closeInfo() {
+        if (infoPanel) { infoPanel.__stop(); infoPanel.remove(); infoPanel = null; }
+        document.body.classList.remove('ak-info-open');
+        document.querySelectorAll('.ak-stats-control').forEach(function(button) { button.setAttribute('aria-pressed', 'false'); });
+    }
+    window.__toggleTorrentStats = function(getSelected, getServerUrl) {
+        if (typeof getSelected === 'function') selected = getSelected;
+        if (typeof getServerUrl === 'function') serverUrl = getServerUrl;
+        if (!selected || !location.hash.startsWith('#/player/')) return false;
+        if (infoPanel && infoPanel.isConnected) { closeInfo(); return false; }
         else {
             infoPanel = panel(selected, serverUrl); infoPanel.dataset.info = 'true'; infoPanel.style.zIndex = '10000';
             document.body.classList.add('ak-info-open'); document.body.appendChild(infoPanel);
+            document.querySelectorAll('.ak-stats-control').forEach(function(button) { button.setAttribute('aria-label', 'Stats'); button.setAttribute('aria-pressed', 'true'); });
+            return true;
         }
-    });
+    };
+    document.addEventListener('keydown', function(event) {
+        if (event.keyCode === 461 && infoPanel && infoPanel.isConnected) {
+            event.preventDefault(); event.stopImmediatePropagation(); closeInfo(); return;
+        }
+        if (event.keyCode !== 457 || !selected || !location.hash.startsWith('#/player/')) return;
+        event.preventDefault(); event.stopImmediatePropagation(); window.__toggleTorrentStats();
+    }, true);
     window.addEventListener('hashchange', function() {
-        if (!location.hash.startsWith('#/player/') && infoPanel) { infoPanel.remove(); infoPanel = null; document.body.classList.remove('ak-info-open'); }
+        if (!location.hash.startsWith('#/player/')) { closeInfo(); selected = null; serverUrl = null; }
     });
     // Route the WASM core, tracks, subtitles and telemetry through one selected backend.
     var syncing = false;

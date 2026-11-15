@@ -1,0 +1,29 @@
+--- player.chunk.js
++++ player.chunk.js
+@@ -825,7 +825,7 @@
+                     };
+                     return (0, o.a0)(g.zo, {
+                         get class() {
+-                            return D.control
++                            return D.control + (e.label ? " ak-stats-control" : "")
+                         },
+                         get classList() {
+                             return {
+@@ -838,6 +838,7 @@
+                         onPress: t,
+                         onClick: t,
+                         get children() {
++                            if (e.label) return e.label;
+                             return (0, o.a0)(o.wv, {
+                                 get when() {
+                                     return e.icon
+@@ -1506,6 +1507,9 @@
+                                                         }), null), (0, r.Yr)(t, (0, o.a0)(z, {
+                                                             icon: "speed",
+                                                             onClick: R
++                                                        }), null), (0, r.Yr)(t, (0, o.a0)(z, {
++                                                            label: "Stats",
++                                                            onClick: () => window.__toggleTorrentStats((() => T.state().selected), (() => A.state().transportUrl))
+                                                         }), null), (0, r.Yr)(t, (0, o.a0)(o.wv, {
+                                                             get when() {
+                                                                 return Ze.videos().length

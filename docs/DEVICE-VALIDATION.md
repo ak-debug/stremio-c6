@@ -40,3 +40,11 @@ Installed and launched 1.1.1 on the same C6. All nine automated tests and IPK ti
 The new Playback setup screen fits the 1920×1080 viewport with discovery results and Save controls visible. Selecting a result populated the URL without changing saved TV-only mode. The Stop control aborted a subsequent search after 13 of 253 checks. The existing TV backend connection check still returned server 4.20.17 with cacheSize 0. No new torrent playback or personal-server configuration was performed for this update.
 
 Search verifies compatible settings responses on HTTP port 11470. It does not claim to find HTTPS-only, custom-port, IPv6-only or isolated/routed servers; manual entry remains available. Discovery results do not identify whether a computer is personal or corporate—choose an appropriate machine yourself before saving.
+
+## Update 1.1.2 — on-screen Stats and actual 4K HDR observation
+
+Installed 1.1.2 with a Stats button in the existing playback controls. On the owner's working stream, a live test opened the panel and closed it with Back; media source and route remained identical, playback advanced, and paused state remained false. The native player reported 3840×2160. All nine automated tests, generated JavaScript syntax checks and archive timestamp checks passed.
+
+Before installation, live playback inspection reported 3840×2160 native/direct HEVC playback with no media error. The owner checked the LG Picture menu and confirmed HDR mode. This verifies 4K decode plus user-observed HDR activation for that particular stream. It does not verify Dolby Vision, a particular bit depth, source authenticity/mastering, AV sync, long-session memory behavior or frame-drop rate; the platform's frame counters returned unusable zero totals. The detailed pipeline query was denied by the TV.
+
+An attempted maintenance restore of a saved pre-update route did not successfully restore the working stream and showed a player error. The owner selected a working source manually. That source was then preserved during all Stats tests and the maintenance checkpoint removed. Its torrent hash/file index matched the TV's local saved stream-history entry. No claim of successful automatic exact-source reopening is made.

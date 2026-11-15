@@ -19,7 +19,7 @@ The source is public, but inherited licensing is not yet explicit and there is n
 
 - Upstream webOS 26 detection, preferred native audio language, smaller subtitle presets and keyboard fixes.
 - StremioR source grid, parsed seeder sorting and reduced animation/blur effects.
-- Loading telemetry: download speed, measured upload speed, connected peers/seeders, known peers, connection limit, cumulative bytes, file-piece availability and native playable-buffer seconds when available. Info toggles the panel during playback.
+- Loading telemetry: download speed, measured upload speed, connected peers/seeders, known peers, connection limit, cumulative bytes, file-piece availability and native playable-buffer seconds when available. Press OK during playback and choose Stats to toggle the panel; Back closes it. The optional remote Info key also works.
 - Playback setup under Settings → Server: standalone TV engine or a Mac/external Stremio server, consistently routed through one loopback proxy for tracks, torrents, subtitles and media.
 - TV Balanced profile (100 connections; 15 MiB/s hard throttle parameter) and selectable Fast profile (200; 37.5 MiB/s). Both keep the original 45 MiB RAM ring and 15 MiB read-ahead option. No flash torrent caching.
 - The TV engine starts on demand and stops when switching to external mode, when the service exits, or after two minutes with no proxy traffic and no active media requests.
@@ -39,7 +39,7 @@ make deploy DEVICE=lgtv
 
 Configure your TV in Developer Mode using LG's CLI first. `make deploy` installs and launches; it does not authenticate to a Stremio account. On first launch choose TV or Mac server, save, then sign in normally. Renew the Developer Mode session before expiry.
 
-Generated output: `io.github.akdebug.stremio_1.1.1_all.ipk`. Download caches are under `.build/downloads`; frontend/server/binaries are generated under `service/`. Never edit generated bundles to make persistent changes; use `patches/` or `scripts/build.py`.
+Generated output: `io.github.akdebug.stremio_1.1.2_all.ipk`. Download caches are under `.build/downloads`; frontend/server/binaries are generated under `service/`. Never edit generated bundles to make persistent changes; use `patches/` or `scripts/build.py`.
 
 ## HDD / SSD and the M2 MacBook Air
 
