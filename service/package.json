@@ -1,1 +1,6 @@
-{"name":"io.strem.tv.server","version":"1.0.0","description":"Stremio Server","main":"launch.js"}
+{
+  "name": "io.github.akdebug.stremio.server",
+  "version": "1.1.0",
+  "description": "Stremio Server",
+  "main": "launch.js"
+}

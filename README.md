@@ -1,68 +1,46 @@
-# Stremio for webOS
+# Stremio AK for LG C6 / webOS 26
 
-Custom Stremio app for LG webOS TVs with working default audio language selection.
+Personal fork of [kieranbrown/stremio-webos](https://github.com/kieranbrown/stremio-webos) with selected features adapted from [jrubimf/StremioR](https://github.com/jrubimf/StremioR). Theater frontend and streaming server are from Stremio. This is an unofficial community build.
 
-The official Stremio app has a bug where it always plays the first audio track in the list, ignoring the user's preferred audio language setting. This build fixes that by reading tracks from the TV's native media pipeline and automatically selecting the track matching your configured language.
+App ID: `io.github.akdebug.stremio`. Service ID: `io.github.akdebug.stremio.server`. Installs alongside the official client. Target: OLED55C6PLA, webOS 26, aarch64. Playback quality and torrent speed depend on the media, network and TV decoder.
 
-Built from [Stremio Theater v1.9.2](https://github.com/NoobyGains/stremio-vidaa-tv) with the official Stremio streaming server.
+## Features
 
-## Compatibility
+- Upstream webOS 26 detection, preferred native audio language, smaller subtitle presets and keyboard fixes.
+- StremioR source grid, parsed seeder sorting and reduced animation/blur effects.
+- Loading telemetry: download speed, measured upload speed, connected peers/seeders, swarm size, cumulative bytes, file-piece availability and native playable-buffer seconds when available. Info toggles the panel during playback.
+- Playback setup under Settings → Server: standalone TV engine or a Mac/external Stremio server, consistently routed through one loopback proxy for tracks, torrents, subtitles and media.
+- TV Balanced profile (100 connections; 15 MiB/s hard throttle parameter) and selectable Fast profile (200; 37.5 MiB/s). Both keep the original 45 MiB RAM ring and 15 MiB read-ahead option. No flash torrent caching.
+- The TV engine starts on demand and stops when switching to external mode, when the service exits, or after two minutes with no proxy traffic and no active media requests.
+- Separate loopback ports: frontend 8082, backend 11479. Bundled server upload-stat fix, connected-seeder count and enabled HLS-v2 route. Direct playback remains preferred; TV software transcoding of 4K is not a performance target.
+- Checksummed frontend/server/FFmpeg, fail-fast patches, syntax validation, proxy tests and IPK timestamp validation.
 
-This build targets **LG TVs from 2020 onward running webOS 5.0 or later**, matching the model-year baseline for [Stremio's official LG app](https://www.stremio.com/downloads). This community build has not been tested on every model.
+## Build and install
 
-**webOS 4.x and earlier (2019 and older LG TVs) are not supported.** Both the Theater frontend and the bundled streaming server depend on newer runtimes. LG documents Chromium 53 and Node.js 0.12.2 for webOS 4.x, compared with Chromium 68 and Node.js 8.12.0 for webOS 5.x. See LG's [web engine versions](https://webostv.developer.lge.com/develop/specifications/web-api-and-web-engine) and [JavaScript service runtimes](https://webostv.developer.lge.com/develop/guides/js-service-basics).
-
-Installing through Developer Mode or Homebrew Channel does not remove these runtime requirements. Supporting older TVs would require compatibility work on both the frontend and the streaming server.
-
-## Prerequisites
-
-1. Install the [webOS CLI](https://www.npmjs.com/package/@webos-tools/cli) — `npm i -g @webos-tools/cli@3.2.6` (requires Node.js 20 or later; releases use Node.js 24). If you have the old CLI installed, remove it first with `npm uninstall -g @webosose/ares-cli`.
-2. Either enable [Developer Mode](https://webostv.developer.lge.com/develop/getting-started/developer-mode-app) on your TV, or have [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) installed
-3. Configure your TV as a device — `ares-setup-device`
-
-Use `@webos-tools/cli` to package the app. The older `@webosose/ares-cli` can write zero timestamps into the IPK, causing `-5: ipk verified failed` on older webOS versions. `make package` checks the archive timestamps before allowing installation or publication.
-
-> **Note:** Developer Mode expires after 1000 hours and any sideloaded apps will be uninstalled. Rooted TVs with Homebrew Channel do not have this limitation.
-
-## Install via Homebrew Channel
-
-If your TV is rooted with [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel):
-
-1. Open Homebrew Channel on your TV
-2. Go to settings and add this repository: `https://raw.githubusercontent.com/kieranbrown/stremio-webos/main/webosbrew/apps.json`
-3. Find Stremio in the app list and install
-
-## Install manually
+Requires Python 3, Node 20+, curl, patch, ar, and `@webos-tools/cli@3.2.6`. Node 24 is used in CI. The compatibility shim also supports the newer Node installed on the development Mac.
 
 ```sh
-make deploy
+npm install -g @webos-tools/cli@3.2.6
+make package
+make deploy DEVICE=lgtv
 ```
 
-This downloads all dependencies, builds the app, packages the IPK, installs it on your TV, and launches it.
+Configure your TV in Developer Mode using LG's CLI first. `make deploy` installs and launches; it does not authenticate to a Stremio account. On first launch choose TV or Mac server, save, then sign in normally. Renew the Developer Mode session before expiry.
 
-Replace the default device name if needed: `make deploy DEVICE=myTV`
+Generated output: `io.github.akdebug.stremio_1.1.0_all.ipk`. Download caches are under `.build/downloads`; frontend/server/binaries are generated under `service/`. Never edit generated bundles to make persistent changes; use `patches/` or `scripts/build.py`.
 
-### Other commands
+## HDD / SSD and the M2 MacBook Air
 
-```sh
-make build     # Download dependencies + build (no install)
-make package   # Build + create IPK
-make restart   # Close + relaunch on TV
-make clean     # Remove build artifacts
-```
+For disk caching attach the drive to the Mac, not the TV. LG's [developer guidance](https://forum.webostv.developer.lge.com/t/webos-internal-storage-and-usb/27902) says ordinary TV apps cannot access USB. This Developer Mode build does not request root or modify platform permissions.
 
-## Auto-start on input select
+Run the official desktop Stremio streaming service on the Mac. Use the desktop build; the bundled webOS server disables disk caching. Give the Mac a DHCP reservation and allow local network/firewall access. In TV Playback setup choose Mac / external server and enter `http://MAC-LAN-IP:11470`, or the exact remote HTTPS endpoint generated by desktop Stremio. The Mac must remain awake. Do not forward these server ports to the public internet.
 
-On rooted TVs, you can register Stremio as an input source so it appears in the TV's input list and can auto-launch:
+Choose the external drive as the cache location in the desktop server settings when available. HDD sequential speed is usually sufficient for film playback; SSD is quieter and handles seeks better. Check the drive is writable on macOS, retain free space for the active media file and OS, and never format an existing drive just for this app. Stremio's cache-size selection is not a strict disk quota.
 
-```sh
-luna-send-pub -n 1 'luna://com.webos.service.eim/addDevice' '{"appId":"io.strem.tv","pigImage":""}'
-```
+For the built-in TV speakers start with 4K HEVC Main10 + DD+/E-AC3 audio. Test Dolby Vision with the TV indicator; a filename tag does not establish supported profile/container or successful DV output. Full disc remuxes may exceed LG's published [60 Mbps HEVC webOS 26 compatibility envelope](https://webostv.developer.lge.com/develop/specifications/video-audio-260). Serving from the Mac preserves original media only when no video transcode is needed.
 
-Run this via SSH on the TV.
+## Validation
 
-## Credits
+`make check` tests remote-address validation, Range/media streaming, POST forwarding, static revalidation, config persistence/origin checks and cancellation when the player disconnects. `make build` verifies downloads and checks all generated JavaScript syntax. `make package` checks IPK tar timestamps.
 
-- [Stremio](https://www.stremio.com/)
-- [NoobyGains/stremio-vidaa-tv](https://github.com/NoobyGains/stremio-vidaa-tv) — Theater frontend
-- [webOS Homebrew Project](https://www.webosbrew.org/)
+See [device validation](docs/DEVICE-VALIDATION.md) for actual on-TV observations and remaining playback checks. No build can guarantee uninterrupted live torrent playback from an underperforming swarm.

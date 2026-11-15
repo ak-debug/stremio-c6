@@ -7,12 +7,12 @@
   },
   "packages": [
     {
-      "id": "io.strem.tv",
-      "title": "Stremio",
-      "iconUri": "https://raw.githubusercontent.com/kieranbrown/stremio-webos/main/app/icon.png",
-      "manifestUrl": "https://github.com/kieranbrown/stremio-webos/releases/latest/download/manifest.json",
+      "id": "io.github.akdebug.stremio",
+      "title": "Stremio AK",
+      "iconUri": "https://raw.githubusercontent.com/ak-debug/stremio-c6/codex/c6-performance/app/icon.png",
+      "manifestUrl": "https://github.com/ak-debug/stremio-c6/releases/latest/download/manifest.json",
       "pool": "main",
-      "shortDescription": "Stremio for webOS with working audio track selection."
+      "shortDescription": "Personal C6 build with torrent telemetry and TV/Mac server selection."
     }
   ]
 }

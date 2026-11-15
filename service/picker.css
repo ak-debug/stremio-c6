@@ -1,0 +1,32 @@
+
+        /* No animations: 1ms instead of none, because the Solid transition groups only unmount
+           elements on transitionend/animationend; a single iteration so spinners don't spin at 1000Hz. */
+        *, *::before, *::after {
+            transition-duration: 1ms !important; transition-delay: 0s !important;
+            animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+        }
+        /* Full-screen 15px blur on the details background is expensive on the TV GPU */
+        .details-omgjE .background-G0atu .image-fkksf.blurred-LTDh_ { filter: none !important; }
+        /* Stream picker (details.chunk.js CSS-module classes, pinned to VIDAA_REF): a 3-row grid that
+           scrolls horizontally. Navigation is geometric, so up/down moves within a column, left/right across. */
+        .details-omgjE:has(.streams-ky0iI) .info-c3Gsa { height: 26vh !important; padding-top: 1.5rem !important; padding-bottom: 0 !important; }
+        .details-omgjE:has(.streams-ky0iI) .info-c3Gsa .logo-rSs1m { height: 6rem !important; margin-bottom: 0.5rem !important; }
+        .details-omgjE:has(.streams-ky0iI) .info-c3Gsa .description-Vy9xR { -webkit-line-clamp: 2 !important; }
+        .streams-ky0iI .streams-list-atX0D { display: grid !important; grid-auto-flow: column; grid-template-rows: repeat(3, 19vh); grid-auto-columns: 30vw; gap: 1.5vh 1.2vw; }
+        .streams-ky0iI .streams-list-atX0D > * { margin: 0 !important; }
+        .stream-rpXLF { height: 19vh !important; width: auto !important; padding: 1rem 1.5rem !important; align-items: flex-start !important; }
+        .stream-rpXLF .play-icon-Z9iaQ { margin-top: 0.3rem; margin-right: 1.2rem !important; }
+        .stream-rpXLF .details-d5pag { align-self: stretch; justify-content: flex-start !important; }
+        .stream-rpXLF .details-d5pag .name-IfzDf { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .stream-rpXLF .details-d5pag { width: 100%; }
+        .stream-rpXLF .details-d5pag .description-yTp1H { white-space: normal !important; width: 100%; }
+        .sc > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.35rem; }
+        .sc .sc-stats { font-size: 1.6rem; font-weight: 700; color: rgba(255, 255, 255, 0.95); }
+        .sc .sc-tags { font-size: 1.3rem; font-weight: 700; color: #b9a6ff; letter-spacing: 0.02em; }
+        .sc .sc-langs { font-size: 1.3rem; color: rgba(255, 255, 255, 0.8); }
+        .sc .sc-file { font-size: 1.1rem; color: rgba(255, 255, 255, 0.4); }
+        .stream-details-bgXP4 { display: none !important; }
+        .torrent-stats { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); padding: 1.2rem 2.4rem; border-radius: 1rem; background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.9); font-size: 1.6rem; line-height: 1.6; text-align: center; white-space: pre; font-variant-numeric: tabular-nums; }
+        .torrent-stats:empty { display: none; }
+        .ak-info-open .torrent-stats:not([data-info="true"]) { display: none; }
+    

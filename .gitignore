@@ -2,3 +2,9 @@
 service/server.js
 service/www/
 service/bin/
+
+.build/
+service/ak-config.json*
+service/server-settings.json
+artifacts/
+service/stremio-cache/

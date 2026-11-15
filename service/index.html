@@ -4,7 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Stremio</title>
-    <script>window.__STREMIO_SERVER_URL__ = 'http://127.0.0.1:8080';</script>
+    <script>window.__STREMIO_SERVER_URL__ = location.origin;</script>
+    <link rel="stylesheet" href="picker.css">
+    <script src="picker.js"></script>
+    <script src="ak-player.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(function(rs) {

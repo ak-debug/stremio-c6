@@ -1,0 +1,11 @@
+--- service.js
++++ service.js
+@@ -554,7 +554,7 @@
+                             globalThis.tizen.application.launchAppControl(n, t, (() => r(t)), (r => e(t, r)))
+                         }
+                         if (globalThis.webOS) {
+-                            const t = "luna://io.strem.tv.server/";
++                            const t = "luna://io.github.akdebug.stremio.server/";
+                             globalThis.webOS.service.request(t, {
+                                 method: "start",
+                                 parameters: {},
