@@ -76,10 +76,11 @@ function createApp(options) {
         agent: function(protocol) { return agents[protocol]; },
         timeout: options.prepareTimeout
     });
-    // The TV server keeps torrent data in a 45 MiB memory ring with no disk cache, so request a
-    // narrower window from it and never ask it to download further ahead than the TV holds.
+    // The TV server keeps torrent data in a 45 MiB memory ring with no disk cache: keep 4 × 8 MiB
+    // in flight, wide enough that peers rarely run out of pieces to send, yet well inside the
+    // ring. Never ask it to download further ahead than the TV holds.
     function readAheadOptions() {
-        var tv = config.mode !== 'external' ? { maxAhead: 160 * 1048576, parallel: 2, segment: 8 * 1048576, serverAhead: false } : {};
+        var tv = config.mode !== 'external' ? { maxAhead: 160 * 1048576, parallel: 4, segment: 8 * 1048576, serverAhead: false } : {};
         return Object.assign({ agent: function(protocol) { return agents[protocol]; }, keep: function(hash) { return pausedDownload.holds(hash); } }, tv, options.readAheadOptions);
     }
     var readAhead = createReadAhead(readAheadOptions());

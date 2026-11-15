@@ -62,3 +62,7 @@ The TV's built-in storage is deliberately not used for torrent data: streaming w
 ## 1.3.1 — Keep the buffer while a slow torrent starts
 
 On the TV in TV mode, The Odyssey (30.8 GB, 0.3–1.1 MiB/s from 10–32 peers) took more than 15 s to send the first bytes after resuming at 45 minutes. The read-ahead frees buffers with no player attached after 15 s, and a request still waiting for its first data has none attached yet. The buffer was freed, and the player fell back to a direct, unbuffered stream from the TV server for the rest of the session: `/ak/status` showed no readers, while the TV server had an open selection to the end of the file. Buffers that a request is still waiting on are now never freed. The tests now require every server request to be a closed range; the previous check accepted an open range `bytes=N-` as closed.
+
+## 1.3.2 — Wider TV-mode window
+
+Per-peer data from the TV server on The Odyssey (MUSHR00M, 30.8 GB) in TV mode: 6–8 of about 20 connected peers were sending, none of them a seeder, from 120–331 known peers. The sending peers mostly had the maximum 23–26 requests outstanding, at 22–665 KiB/s each, for 1.2–1.9 MiB/s in total. In one of four readings, only 3 pieces were missing in each of the two 8 MiB windows, and most peers had nothing requested. TV mode now keeps 4 × 8 MiB in flight, 32 MiB, still within the TV server's 45 MiB memory ring, so peers rarely run out of pieces to send.
