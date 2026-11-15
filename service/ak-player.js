@@ -144,8 +144,31 @@
         });
     };
     // A cold torrent can make the native player report an unsupported source before data
-    // arrives. Retry torrent streams in-app before the LG media player hand-off.
-    window.__akShouldRetry = function(url, attempt) { return !!torrentPath(url) && attempt <= 2; };
+    // arrives. Retry torrent streams in-app before the LG media player hand-off. Once a stream
+    // has played, an error means the download fell behind: keep recovering in-app.
+    window.__akShouldRetry = function(url, attempt, played) { return !!torrentPath(url) && attempt <= (played ? 30 : 2); };
+    // Before reloading a stream that had played, wait (up to 90 s) until the service has read
+    // ahead enough from where the player stopped.
+    window.__akRecover = function(url) {
+        var path = torrentPath(url);
+        if (!path) return Promise.resolve();
+        if (prepareController) prepareController.abort();
+        var controller = prepareController = new AbortController(), started = Date.now(), file = path.split('?')[0].toLowerCase();
+        var target = 48 * 1048576;
+        window.__AK_PREPARE_STATUS__ = 'Download fell behind · waiting for the server…';
+        return new Promise(function(resolve) {
+            function finish() { clearInterval(poll); if (controller === prepareController) { prepareController = null; window.__AK_PREPARE_STATUS__ = ''; } resolve(); }
+            var poll = setInterval(function() {
+                if (controller.signal.aborted || Date.now() - started > 90000) return finish();
+                fetch('/ak/status', { cache: 'no-store', signal: controller.signal }).then(function(r) { return r.json(); }).then(function(data) {
+                    var reader = (data.readAhead && data.readAhead.readers || []).find(function(r) { return r.file === file && typeof r.ahead === 'number'; });
+                    if (!reader) return finish();
+                    if (reader.ahead >= target || reader.done) return finish();
+                    window.__AK_PREPARE_STATUS__ = 'Download fell behind · buffering ' + size(reader.ahead) + ' / ' + size(target) + ' · ' + Math.round((Date.now() - started) / 1000) + ' s';
+                }).catch(function() {});
+            }, 1000);
+        });
+    };
     window.addEventListener('hashchange', function() {
         if (!location.hash.startsWith('#/player/') && prepareController) { prepareController.abort(); prepareController = null; window.__AK_PREPARE_STATUS__ = ''; }
     });

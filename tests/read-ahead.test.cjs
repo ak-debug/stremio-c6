@@ -145,3 +145,29 @@ test('cleanup skips torrents kept for paused downloading and refreshes leaky tor
         await new Promise(r => setTimeout(r, 80)); assert.equal(removed.length, 2);
     } finally { cleanup.shutdown(); await close(backend); }
 });
+
+test('keeps reading ahead while a player that was streaming reconnects, then serves it from the buffer', async () => {
+    const file = crypto.randomBytes(24 * MiB);
+    const t = await setup(file, 0, { resumeAfter: 2 * MiB, maxAhead: 8 * MiB, behind: 32 * MiB });
+    try {
+        const control = new AbortController();
+        const reply = await fetch(`${t.base}/${HASH}/0`, { headers: { Range: 'bytes=0-' }, signal: control.signal });
+        const reader = reply.body.getReader();
+        let got = 0;
+        while (got < 3 * MiB) got += (await reader.read()).value.length;
+        control.abort();
+        let state;
+        for (let n = 0; n < 100; n++) {
+            await new Promise(r => setTimeout(r, 20));
+            state = (await status(t.base)).readers[0];
+            if (state && state.clients === 0 && state.ahead >= 7 * MiB) break;
+        }
+        assert.equal(state.clients, 0); assert.ok(state.ahead >= 7 * MiB, JSON.stringify(state));
+        // The reloading player re-reads the header, then resumes just behind where it stopped.
+        await (await fetch(`${t.base}/${HASH}/0`, { headers: { Range: 'bytes=0-1023' } })).arrayBuffer();
+        const before = t.log.length, at = 2 * MiB;
+        const again = await fetch(`${t.base}/${HASH}/0`, { headers: { Range: `bytes=${at}-${at + 4 * MiB - 1}` } });
+        assert.ok(Buffer.from(await again.arrayBuffer()).equals(file.subarray(at, at + 4 * MiB)));
+        assert.ok(t.log.slice(before).every(range => !range.startsWith(`bytes=${at}-`)), 'resumed from the buffer: ' + t.log.slice(before).join(' '));
+    } finally { await t.done(); }
+});

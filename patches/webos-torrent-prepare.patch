@@ -7,11 +7,11 @@
 +                        var __akCode = (A.error || {}).code;
 +                        // Cold torrents can fail before data arrives: warm the file and retry in-app first.
 +                        // Stream objects are frozen, so count attempts on the video element.
-+                        if ((3 === __akCode || 4 === __akCode) && D && window.__akShouldRetry && (A.__akRetries = A.__akRetryStream === D ? A.__akRetries + 1 : 1, A.__akRetryStream = D, window.__akShouldRetry(D.url, A.__akRetries))) {
++                        // A stream that already played only fell behind the download: never hand it off.
++                        if ((3 === __akCode || 4 === __akCode) && D && window.__akShouldRetry && (A.__akRetryStream !== D && (A.__akRetryStream = D, A.__akRetries = 0, A.__akPlayed = !1), A.__akRetries++, A.currentTime > 0 && (A.__akPlayed = !0, C = Math.round(1e3 * A.currentTime)), window.__akShouldRetry(D.url, A.__akRetries, A.__akPlayed))) {
 +                            var __akStream = D;
-+                            A.currentTime > 0 && (C = Math.round(1e3 * A.currentTime));
-+                            console.warn("Media error " + __akCode + ", retrying torrent in-app (attempt " + A.__akRetries + ")");
-+                            (window.__akPrepare ? window.__akPrepare(__akStream.url) : Promise.resolve()).then(function() {
++                            console.warn("Media error " + __akCode + ", retrying torrent in-app (attempt " + A.__akRetries + (A.__akPlayed ? ", after playback" : "") + ")");
++                            (A.__akPlayed && window.__akRecover ? window.__akRecover(__akStream.url) : window.__akPrepare ? window.__akPrepare(__akStream.url) : Promise.resolve()).then(function() {
 +                                if (w || D !== __akStream) return;
 +                                try { A.removeAttribute("src"), A.load() } catch (__e) {}
 +                                A.src = __akStream.url;

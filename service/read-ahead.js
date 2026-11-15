@@ -27,9 +27,9 @@ function createReadAhead(options) {
     options = options || {};
     var maxAhead = options.maxAhead || 192 * MiB, minAhead = options.minAhead || 32 * MiB;
     var reserve = options.reserve === undefined ? 200 * MiB : options.reserve;
-    var behind = options.behind || 8 * MiB, joinGap = options.joinGap || 8 * MiB;
-    var idle = options.idle || 15000, maxReaders = options.maxReaders || 3, stallMs = options.stallMs || 30000;
-    var segment = options.segment || 16 * MiB;
+    var behind = options.behind || 32 * MiB, joinGap = options.joinGap || 8 * MiB;
+    var idle = options.idle || 90000, maxReaders = options.maxReaders || 3, stallMs = options.stallMs || 30000;
+    var segment = options.segment || 16 * MiB, resumeAfter = options.resumeAfter || 64 * MiB;
     var memory = options.memory || availableMemory;
     var readers = [], budget = maxAhead, budgetAt = 0;
 
@@ -72,13 +72,16 @@ function createReadAhead(options) {
         var c = r.chunks[lo];
         return c.buf.subarray(pos - c.offset, Math.min(c.buf.length, last + 1 - c.offset));
     }
+    // While the player reconnects after an error, keep filling from where it stopped.
+    function reconnecting(r) { return !r.clients.size && r.lastPos !== null && r.served >= resumeAfter && Date.now() - r.idleSince < idle; }
     function update(r) {
         if (r.disposed) return;
         var lim = limit(), pos = minPos(r);
         if (pos !== Infinity) trim(r, pos - behind);
+        else if (r.lastPos !== null) pos = r.lastPos;
         var ahead = pos === Infinity ? r.size : end(r) - pos;
         r.paused = ahead >= lim || held() >= lim + behind * readers.length;
-        if (!r.upstream && !r.done && !r.error && !r.waitingRetry && r.total !== null && r.clients.size && !r.paused) connect(r);
+        if (!r.upstream && !r.done && !r.error && !r.waitingRetry && r.total !== null && (r.clients.size || reconnecting(r)) && !r.paused) connect(r);
     }
     // Fetch fixed segments that complete normally. Stremio's server leaks a selection (and keeps
     // the torrent active) for every media request that is aborted, so never cut a request short.
@@ -120,7 +123,7 @@ function createReadAhead(options) {
             if (r.total === null || r.badStatus) { r.error = r.lastError || new Error('Streaming server closed the connection.'); r.rejectReady(r.error); notify(r); return; }
             if (end(r) >= r.total) { r.done = true; notify(r); return; }
             if (r.segmentDone) return update(r);
-            if (!r.clients.size) return;
+            if (!r.clients.size && !reconnecting(r)) return;
             if (++r.retries > 5) { r.error = new Error('Lost connection to the streaming server.'); notify(r); return; }
             r.waitingRetry = true;
             setTimeout(function() { r.waitingRetry = false; update(r); }, 500 * r.retries).unref();
@@ -130,7 +133,7 @@ function createReadAhead(options) {
     function open(key, url, start) {
         var r = { key: key, url: url, start: start, chunks: [], head: 0, size: 0, total: null, headers: null,
             upstream: null, paused: false, segmentDone: false, waitingRetry: false, done: false, error: null, disposed: false,
-            clients: new Set(), waiters: new Set(), retries: 0, idleSince: Date.now(), lastData: Date.now() };
+            clients: new Set(), waiters: new Set(), retries: 0, idleSince: Date.now(), lastData: Date.now(), lastPos: null, served: 0 };
         r.ready = new Promise(function(resolve, reject) { r.resolveReady = resolve; r.rejectReady = reject; });
         r.ready.catch(function() {});
         readers.push(r);
@@ -151,7 +154,7 @@ function createReadAhead(options) {
     function sweep() {
         var now = Date.now();
         readers.slice().forEach(function(r) {
-            if (!r.clients.size && now - r.idleSince > idle) return dispose(r);
+            if (!r.clients.size && now - r.idleSince > (r.served >= resumeAfter ? idle : 15000)) return dispose(r);
             if (r.upstream && r.clients.size && now - r.lastData > stallMs) r.upstream.destroy();
         });
     }
@@ -168,7 +171,7 @@ function createReadAhead(options) {
         }));
         res.once('close', function() {
             closed = true; r.clients.delete(client);
-            if (!r.clients.size) r.idleSince = Date.now();
+            if (!r.clients.size) { r.idleSince = Date.now(); r.lastPos = client.pos; }
             update(r);
         });
         function pump() {
@@ -176,7 +179,7 @@ function createReadAhead(options) {
             while (client.pos <= last) {
                 var piece = slice(r, client.pos, last);
                 if (!piece) break;
-                client.pos += piece.length;
+                client.pos += piece.length; r.served += piece.length;
                 if (!res.write(piece)) { update(r); res.once('drain', pump); return; }
             }
             update(r);
@@ -199,8 +202,9 @@ function createReadAhead(options) {
         if (!r) {
             // Small closed ranges (index probes) go straight to the server.
             if (range.end !== null && range.end - range.start < 4 * MiB) return false;
-            // A seek: drop idle buffers for the same file, then make room.
-            readers.filter(function(x) { return x.key === key && !x.clients.size; }).forEach(function(x) { dispose(x); });
+            // A seek: drop idle buffers for the same file, then make room. A reloading player first
+            // re-reads the file header, so keep buffers then; they are swept when unused.
+            if (range.start >= 64 * MiB) readers.filter(function(x) { return x.key === key && !x.clients.size; }).forEach(function(x) { dispose(x); });
             while (readers.length >= maxReaders) {
                 var spare = readers.filter(function(x) { return !x.clients.size; }).sort(function(a, b) { return a.idleSince - b.idleSince; })[0];
                 if (!spare) return false;
@@ -217,6 +221,7 @@ function createReadAhead(options) {
     function state() {
         return { limit: limit(), held: held(), readers: readers.map(function(r) {
             var pos = minPos(r);
+            if (pos === Infinity && r.lastPos !== null) pos = r.lastPos;
             return { file: r.key.split('?')[0], clients: r.clients.size, ahead: pos === Infinity ? null : end(r) - pos, held: r.size, total: r.total, paused: r.paused, done: r.done, retries: r.retries, error: r.error && r.error.message };
         }) };
     }

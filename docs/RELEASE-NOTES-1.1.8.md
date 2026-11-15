@@ -21,3 +21,12 @@ The Mac server's `btMaxConnections` was also lowered from 200 to 100 to reduce s
 ## Tests
 
 24 automated tests: exact bytes through the read-ahead from the start and after a seek, filling to the limit and stopping, closed segments only, small probes passed through, reconnecting after a dropped connection, cleanup after playback with a new request cancelling it, paused-download keep-alive exemption, and rate-limited leak refresh.
+
+## 1.1.9 — Recover in-app when a playing torrent falls behind
+
+On The Odyssey (2026), a 39.3 GB UHD BDRip MKV, the Mac downloaded 2.5–6.5 MiB/s from 3–18 peers, below the file's ~3.8 MB/s average bitrate. The read-ahead emptied, and the native player raised a media error after it starved. After two in-app retries, the upstream code handed the stream to LG's media player.
+
+- Once a stream has played, media errors 3/4 are treated as the download falling behind. The player retries in-app up to 30 times and never hands off to the LG media player. Before each reload, it waits up to 90 s until the service has 48 MiB read ahead from where playback stopped. The status reads "Download fell behind · buffering X / 48 MiB". Streams that never played keep the 1.1.6 behaviour: prepare, two retries, then hand-off.
+- A read-ahead buffer that has served at least 64 MiB keeps filling for 90 s after its player disconnects, and keeps 32 MiB already played, so a reloading player resumes from memory. Re-reads of the first 64 MiB (the header a reloading player fetches) no longer discard it. Other idle buffers are freed after 15 s.
+
+25 automated tests, including resuming from the buffer after a reconnect.
