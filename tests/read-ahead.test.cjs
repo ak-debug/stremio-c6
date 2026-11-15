@@ -62,7 +62,7 @@ test('serves exact bytes through the read-ahead buffer, from the start and after
         reply = await fetch(`${t.base}/${HASH}/0`, { headers: { Range: `bytes=${at}-` } });
         assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file.subarray(at)));
         // Every server request is a closed segment, so none is ever cut short.
-        for (const range of t.log) { const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 2 * MiB, range); }
+        for (const range of t.log) { assert.match(range, /^bytes=\d+-\d+$/); const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 2 * MiB, range); }
     } finally { await t.done(); }
 });
 
@@ -194,7 +194,7 @@ test('keeps several segments in flight and still serves the bytes in order', asy
         const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
         assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file));
         assert.equal(most, 3, 'three segments were requested at once: ' + log.join(' '));
-        for (const range of log) { const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 2 * MiB, range); }
+        for (const range of log) { assert.match(range, /^bytes=\d+-\d+$/); const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 2 * MiB, range); }
     } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });
 
@@ -295,7 +295,7 @@ test('in TV mode, reads ahead from the TV server in 8 MiB segments without askin
         const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
         assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file));
         assert.ok(log.length >= 3, log.join(' '));
-        for (const range of log) { assert.ok(range, 'only media segments, no stats lookups'); const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 8 * MiB, range); }
+        for (const range of log) { assert.match(range || '', /^bytes=\d+-\d+$/, 'only closed media segments, no stats lookups'); const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 8 * MiB, range); }
         assert.equal((await status(base)).serverProbes, 0);
     } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });
@@ -327,5 +327,27 @@ test('leaving the player frees its buffers and stops its torrent at once', async
         const log = (await (await fetch(base + '/ak/status')).json()).cleanup.log;
         assert.equal(log[log.length - 1].action, 'stopped on leaving the player');
         assert.equal((await fetch(base + '/ak/leave', { method: 'POST', headers: { Origin: 'http://other.example' } })).status, 403);
+    } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
+});
+
+test('keeps the buffer while a slow torrent has not sent its first bytes yet', async () => {
+    const file = crypto.randomBytes(8 * MiB);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stremio-ak-ra-'));
+    const log = [], media = backendFor(file, log);
+    // The first response arrives well after the unused-buffer timeout.
+    let first = true;
+    const backend = http.createServer((req, res) => {
+        if (!first) return media.emit('request', req, res);
+        first = false; setTimeout(() => media.emit('request', req, res), 300);
+    });
+    const target = await listen(backend);
+    const proxy = createApp({ www: directory, configFile: path.join(directory, 'config.json'), target, ensureLocal: async () => {}, readAhead: true,
+        readAheadOptions: { maxAhead: 4 * MiB, minAhead: MiB, behind: MiB, segment: 2 * MiB, parallel: 1, serverAhead: false, memory: () => null, unused: 50, sweepMs: 20 } });
+    const base = await listen(proxy);
+    try {
+        const reply = await fetch(`${base}/${HASH}/0`, { headers: { Range: 'bytes=0-' } });
+        assert.ok(Buffer.from(await reply.arrayBuffer()).equals(file));
+        // Served through the read-ahead: only closed segments, never the player's open range.
+        for (const range of log) { assert.match(range, /^bytes=\d+-\d+$/, log.join(' ')); const [a, b] = range.slice(6).split('-').map(Number); assert.ok(b >= a && b - a < 2 * MiB, log.join(' ')); }
     } finally { await close(proxy); await close(backend); fs.rmSync(directory, { recursive: true }); }
 });

@@ -58,3 +58,7 @@ Measured in TV mode on The Odyssey (30.7 GB): the TV downloaded 0.1–1.4 MiB/s,
 The TV's built-in storage is deliberately not used for torrent data: streaming writes the whole file, 20–40 GB per 4K movie, to flash that can't be replaced, with 2.4 GB free.
 
 31 automated tests, including TV-mode segments and leaving the player.
+
+## 1.3.1 — Keep the buffer while a slow torrent starts
+
+On the TV in TV mode, The Odyssey (30.8 GB, 0.3–1.1 MiB/s from 10–32 peers) took more than 15 s to send the first bytes after resuming at 45 minutes. The read-ahead frees buffers with no player attached after 15 s, and a request still waiting for its first data has none attached yet. The buffer was freed, and the player fell back to a direct, unbuffered stream from the TV server for the rest of the session: `/ak/status` showed no readers, while the TV server had an open selection to the end of the file. Buffers that a request is still waiting on are now never freed. The tests now require every server request to be a closed range; the previous check accepted an open range `bytes=N-` as closed.

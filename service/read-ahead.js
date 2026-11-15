@@ -30,7 +30,7 @@ function createReadAhead(options) {
     var reserve = options.reserve === undefined ? 200 * MiB : options.reserve;
     var behind = options.behind || 32 * MiB, joinGap = options.joinGap || 8 * MiB;
     var idle = options.idle || 90000, maxReaders = options.maxReaders || 3, stallMs = options.stallMs || 30000;
-    var segment = options.segment || 16 * MiB, resumeAfter = options.resumeAfter || 64 * MiB;
+    var segment = options.segment || 16 * MiB, resumeAfter = options.resumeAfter || 64 * MiB, unused = options.unused || 15000;
     // Several segments in flight keep the server's priority window wide, so its peers stay busy
     // on what plays next instead of filling older gaps in the file.
     var parallel = options.parallel || 3;
@@ -169,7 +169,7 @@ function createReadAhead(options) {
     function open(key, url, start) {
         var r = { key: key, url: url, start: start, chunks: [], head: 0, size: 0, total: null, headers: null, segs: [],
             paused: false, done: false, error: null, disposed: false, clients: new Set(), waiters: new Set(), retries: 0,
-            idleSince: Date.now(), lastPos: null, served: 0, serverAhead: null };
+            idleSince: Date.now(), lastPos: null, served: 0, serverAhead: null, waiting: 0 };
         r.ready = new Promise(function(resolve, reject) { r.resolveReady = resolve; r.rejectReady = reject; });
         r.ready.catch(function() {});
         readers.push(r);
@@ -191,7 +191,9 @@ function createReadAhead(options) {
     function sweep() {
         var now = Date.now();
         readers.slice().forEach(function(r) {
-            if (!r.clients.size && now - r.idleSince > (r.served >= resumeAfter ? idle : 15000) && !(keep(hashOf(r)) && r.lastPos !== null)) return dispose(r);
+            // A slow torrent can take longer than `unused` to send its first bytes: keep buffers a
+            // request is still waiting on, or the player falls back to a direct, unbuffered stream.
+            if (!r.clients.size && !r.waiting && now - r.idleSince > (r.served >= resumeAfter ? idle : unused) && !(keep(hashOf(r)) && r.lastPos !== null)) return dispose(r);
             var head = r.segs[0];
             if (head && head.req && r.clients.size && now - head.lastData > stallMs) head.req.destroy();
             update(r);
@@ -251,7 +253,9 @@ function createReadAhead(options) {
             }
             r = open(key, url.href, range.start);
         }
-        try { await r.ready; } catch (_) { if (!r.clients.size) dispose(r); return false; }
+        r.waiting++;
+        try { await r.ready; } catch (_) { r.waiting--; if (!r.clients.size) dispose(r); return false; }
+        r.waiting--;
         if (res.destroyed) { r.idleSince = r.clients.size ? r.idleSince : Date.now(); return true; }
         serve(r, req, res, range);
         return true;
